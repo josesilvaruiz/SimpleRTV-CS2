@@ -79,6 +79,7 @@ Located at `configs/plugins/SimpleRTV/SimpleRTV.json`:
 
 - CounterStrikeSharp `>= 1.0.367`
 - .NET 8
+- `Microsoft.Data.Sqlite` — **already bundled** in the release zip (includes `Microsoft.Data.Sqlite.dll`, `SQLitePCLRaw.*.dll`, and the native `e_sqlite3` library for Windows x64 and Linux x64)
 
 ## License
 
