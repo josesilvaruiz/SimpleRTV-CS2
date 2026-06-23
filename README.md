@@ -16,8 +16,8 @@ A Rock The Vote plugin for Counter-Strike 2 built with [CounterStrikeSharp](http
 ## Installation
 
 1. Download the latest release and extract it into your server's `addons/counterstrikesharp/plugins/` folder.
-2. Copy `rtv_maps.json` to `csgo/cfg/rtv_maps.json` on your server and edit it with your map list.
-3. Restart the server. A default config file will be generated at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`.
+2. Copy `rtv_maps.json` to `addons/counterstrikesharp/configs/plugins/SimpleRTV/rtv_maps.json` on your server and edit it with your map list.
+3. Restart the server. A default config file will be generated at the same location as `SimpleRTV.json`.
 
 ## Map list format (`rtv_maps.json`)
 
