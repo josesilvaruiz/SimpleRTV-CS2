@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using CounterStrikeSharp.API;
 using Timer = CounterStrikeSharp.API.Modules.Timers.Timer;
@@ -58,8 +59,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _mapVote = new MapVote();
         _nominate = new NominateService();
 
+        PreloadSqliteNative();
         string dbPath = Path.Combine(ModuleDirectory, "..", "..", "data", "SimpleRTV", "prefs.db");
-        _db = new PlayerPrefsDb(dbPath);
+        _db = new PlayerPrefsDb(dbPath, Logger);
         _workshop = new WorkshopService(Logger);
 
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
@@ -629,6 +631,25 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void PreloadSqliteNative()
+    {
+        string libName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "e_sqlite3.dll" : "libe_sqlite3.so";
+        string libPath = Path.Combine(ModuleDirectory, libName);
+        if (!File.Exists(libPath))
+        {
+            Logger.LogWarning("[SimpleRTV] Native SQLite library not found at {Path} — SQLite features may fail.", libPath);
+            return;
+        }
+        try
+        {
+            NativeLibrary.Load(libPath);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning("[SimpleRTV] Could not preload {Lib}: {Err}", libName, ex.Message);
+        }
+    }
 
     private static void FireAndForget(Task _) { }
 

@@ -6,19 +6,26 @@ A Rock The Vote plugin for Counter-Strike 2 built with [CounterStrikeSharp](http
 
 - **RTV voting** — players vote with `!rtv`; once the threshold is reached, a map vote starts automatically
 - **Automatic map vote** — triggers a few minutes before the timelimit expires (configurable)
-- **WASD menu** — interactive in-game menu navigated with W/S/E/R keys
+- **WASD menu** — interactive in-game menu with live vote counts next to each map option, navigated with W/S/E/R keys
 - **Chat vote mode** — players can switch to typing a number in chat with `!votemode`; preference is saved per-player in SQLite
 - **Map nominations** — players nominate maps with `!nominate`; nominated maps get priority in the vote
-- **Live vote scoreboard** — players who have already voted see real-time vote counts on screen
+- **Live vote scoreboard** — real-time vote counts visible during the vote (in the WASD menu and as a center-screen overlay for chat-mode players)
+- **Vote result screen** — winning map displayed on screen for 6 seconds when the vote ends
 - **Workshop map support** — handles `changelevel`, `host_workshop_map`, and `ds_workshop_changelevel`
 - **Workshop Collection auto-populate** — reads your server's active Workshop Collection from Steam API and builds the map list automatically; results are cached locally to avoid hitting the API on every restart
 - **Multi-language** — English, Spanish, French, German, Russian, Portuguese, Polish, Italian, Dutch, Turkish
 
 ## Installation
 
-1. Download the latest release and extract it into your server root — files land in the correct folders automatically.
-2. Copy `rtv_maps.json` to `addons/counterstrikesharp/configs/plugins/SimpleRTV/rtv_maps.json` and edit it with your maps (or leave it empty and let the Workshop auto-populate do the work).
-3. Restart the server. The config file `SimpleRTV.json` will be generated in the same folder.
+1. Download the latest release and extract it into your **server root** — files land in the correct folders automatically:
+   - Plugin DLL + SQLite libs → `addons/counterstrikesharp/plugins/SimpleRTV/`
+   - Map list template → `addons/counterstrikesharp/configs/plugins/SimpleRTV/rtv_maps.json`
+
+2. Edit `addons/counterstrikesharp/configs/plugins/SimpleRTV/rtv_maps.json` with your map pool (see format below), or leave it empty and use Workshop Collection auto-populate.
+
+3. Restart the server. The config file `SimpleRTV.json` will be generated automatically in `addons/counterstrikesharp/configs/plugins/SimpleRTV/`.
+
+> **Linux servers:** The native SQLite library (`libe_sqlite3.so`) is bundled in the zip and placed in the plugin folder. The plugin loads it automatically on startup. No manual copy is needed.
 
 ## Workshop Collection auto-populate
 
@@ -37,22 +44,28 @@ On each map start, the plugin checks a local cache (`workshop_cache.json` in the
 
 ## Map list format (`rtv_maps.json`)
 
+File location: `addons/counterstrikesharp/configs/plugins/SimpleRTV/rtv_maps.json`
+
 ```json
 {
-  "de_dust2":     { "ws": false, "display": "Dust 2",    "mapid": "" },
-  "mg_mymap":     { "ws": true,  "display": "My WS Map", "mapid": "1234567890" }
+  "de_dust2":           { "ws": false, "display": "Dust 2",            "mapid": "" },
+  "de_mirage":          { "ws": false, "display": "Mirage",            "mapid": "" },
+  "mg_simpsons_course": { "ws": true,  "display": "Simpsons Course",   "mapid": "3070447697" },
+  "mg_lego_islands":    { "ws": true,  "display": "Lego Islands",      "mapid": "3558345146" }
 }
 ```
 
-| Field     | Type    | Description                                      |
-|-----------|---------|--------------------------------------------------|
-| `ws`      | boolean | `true` for workshop maps, `false` for official   |
-| `display` | string  | Name shown in vote menus and chat                |
-| `mapid`   | string  | Workshop item ID (only used when `ws` is `true`) |
+| Field     | Type    | Description                                                    |
+|-----------|---------|----------------------------------------------------------------|
+| `ws`      | boolean | `true` for Workshop maps, `false` for official/built-in maps  |
+| `display` | string  | Name shown in vote menus and chat                              |
+| `mapid`   | string  | Workshop item ID — required when `ws` is `true`               |
+
+The map **key** (e.g. `mg_simpsons_course`) must match the exact map name the server uses (`Server.MapName`). For Workshop maps this is the filename without extension, as reported by the game after the map loads.
 
 ## Configuration
 
-Located at `configs/plugins/SimpleRTV/SimpleRTV.json`:
+Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 
 ```json
 {
@@ -67,16 +80,16 @@ Located at `configs/plugins/SimpleRTV/SimpleRTV.json`:
 }
 ```
 
-| Key                       | Default          | Description                                                        |
-|---------------------------|------------------|--------------------------------------------------------------------|
-| `RtvThreshold`            | `0.6`            | Fraction of players needed to trigger a vote (60%)                 |
-| `VoteSeconds`             | `30`             | Duration of the map vote in seconds                                |
-| `RtvDelaySeconds`         | `90`             | Seconds after map start before RTV is allowed                      |
-| `MapsInVote`              | `5`              | Number of map options shown in the vote                            |
-| `MapsFile`                | `rtv_maps.json`  | Map list filename (relative to this plugin's configs folder)       |
-| `TriggerSecondsBeforeEnd` | `120`            | Seconds before timelimit to start the automatic vote               |
-| `WorkshopCollectionId`    | `""`             | Workshop Collection ID to auto-populate maps (empty = auto-detect) |
-| `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API    |
+| Key                       | Default          | Description                                                                                      |
+|---------------------------|------------------|--------------------------------------------------------------------------------------------------|
+| `RtvThreshold`            | `0.6`            | Fraction of players needed to trigger a vote (60%)                                               |
+| `VoteSeconds`             | `30`             | Duration of the map vote in seconds                                                              |
+| `RtvDelaySeconds`         | `90`             | Seconds after map start before RTV is allowed                                                    |
+| `MapsInVote`              | `5`              | Number of map options shown in the vote                                                          |
+| `MapsFile`                | `rtv_maps.json`  | Map list filename — resolved relative to `configs/plugins/SimpleRTV/` (this plugin's config folder) |
+| `TriggerSecondsBeforeEnd` | `120`            | Seconds before timelimit to start the automatic vote                                             |
+| `WorkshopCollectionId`    | `""`             | Workshop Collection ID to auto-populate maps (empty = auto-detect from `host_workshop_collection`) |
+| `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API                                  |
 
 ## Commands
 
@@ -98,7 +111,7 @@ Located at `configs/plugins/SimpleRTV/SimpleRTV.json`:
 
 - CounterStrikeSharp `>= 1.0.367`
 - .NET 8
-- `Microsoft.Data.Sqlite` — **bundled** in the release zip (includes native `e_sqlite3` for Windows x64 and Linux x64)
+- `Microsoft.Data.Sqlite` — **bundled** in the release zip (includes native `e_sqlite3` for Windows x64 and Linux x64, loaded automatically from the plugin folder at startup)
 
 ## License
 
