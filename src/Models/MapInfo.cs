@@ -2,9 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace SimpleRTV;
 
-/// <summary>
-/// Representa una entrada del GGMCmaps.json.
-/// </summary>
 public class MapInfo
 {
     [JsonPropertyName("ws")]

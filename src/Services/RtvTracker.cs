@@ -3,10 +3,6 @@ using System.Collections.Generic;
 
 namespace SimpleRTV;
 
-/// <summary>
-/// Lleva la cuenta de qué jugadores pidieron RTV.
-/// Calcula cuántos votos faltan para alcanzar el porcentaje necesario.
-/// </summary>
 public class RtvTracker
 {
     private readonly HashSet<int> _voters = new();
@@ -14,18 +10,15 @@ public class RtvTracker
     public int VoteCount => _voters.Count;
     public bool HasVoted(int slot) => _voters.Contains(slot);
 
-    /// <summary>Añade el voto del jugador. Devuelve false si ya había votado.</summary>
+    /// <summary>Registers a player's RTV vote. Returns false if already voted.</summary>
     public bool AddVote(int slot) => _voters.Add(slot);
 
-    /// <summary>Elimina el voto del jugador (cuando se desconecta).</summary>
+    /// <summary>Removes a player's vote, called on disconnect.</summary>
     public void RemoveVote(int slot) => _voters.Remove(slot);
 
     public void Reset() => _voters.Clear();
 
-    /// <summary>
-    /// Calcula cuántos votos más hacen falta para llegar al threshold.
-    /// Devuelve 0 o negativo si ya se alcanzó.
-    /// </summary>
+    /// <summary>Returns how many more votes are needed to reach the threshold. Zero or negative means it's already met.</summary>
     public int NeededVotes(int totalPlayers, float threshold)
     {
         if (totalPlayers == 0) return 1;

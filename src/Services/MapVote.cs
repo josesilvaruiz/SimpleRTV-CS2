@@ -25,7 +25,7 @@ public class MapVote
 
     public bool HasVoted(int slot) => _voters.Contains(slot);
 
-    /// <summary>Registra el voto de un jugador. Devuelve false si ya votó o el mapa no existe.</summary>
+    /// <summary>Registers a vote for a map. Returns false if the player already voted or the map key is invalid.</summary>
     public bool TryVote(int slot, string mapKey)
     {
         if (_voters.Contains(slot)) return false;

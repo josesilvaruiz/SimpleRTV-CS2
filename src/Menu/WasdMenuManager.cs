@@ -4,9 +4,7 @@ using CounterStrikeSharp.API.Modules.Utils;
 
 namespace SimpleRTV;
 
-/// <summary>
-/// Self-contained WASD menu system. Registra el listener OnTick para capturar W/S/D/R.
-/// </summary>
+/// <summary>Self-contained WASD menu system driven by W/S/E/R key presses.</summary>
 public class WasdMenuManager
 {
     private readonly Dictionary<int, WasdMenuPlayer> _players = new();

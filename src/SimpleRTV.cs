@@ -14,10 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace SimpleRTV;
 
-/// <summary>
-/// Plugin principal. Registra los comandos y listeners,
-/// y coordina los servicios (MapService, RtvTracker, MapVote).
-/// </summary>
 public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 {
     public override string ModuleName => "SimpleRTV";
@@ -93,7 +89,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _wasdMenu.CloseAll();
     }
 
-    // ── Listeners / Eventos ────────────────────────────────────────────────────
+    // ── Listeners / Events ────────────────────────────────────────────────────
 
     private HookResult OnPlayerActivate(EventPlayerActivate @event, GameEventInfo _)
     {
@@ -129,7 +125,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         else
             _rtvAllowed = true;
 
-        // Leer mp_timelimit con un pequeño delay para que el mapa haya terminado de cargar
+        // Delay mp_timelimit read to ensure the map has fully loaded
         AddTimer(3f, ScheduleTimeLimitTimers, TimerFlags.STOP_ON_MAPCHANGE);
     }
 
@@ -137,7 +133,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         var mpTimelimit = ConVar.Find("mp_timelimit");
         float timeLimitMinutes = mpTimelimit?.GetPrimitiveValue<float>() ?? 0f;
-        Logger.LogInformation("[SimpleRTV] mp_timelimit leído: {Val}", timeLimitMinutes);
+        Logger.LogInformation("[SimpleRTV] mp_timelimit: {Val}", timeLimitMinutes);
 
         if (timeLimitMinutes <= 0 || Config.TriggerSecondsBeforeEnd <= 0) return;
 
@@ -147,10 +143,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         if (autoVoteDelay > 0)
             AddTimer(autoVoteDelay, StartAutoVote, TimerFlags.STOP_ON_MAPCHANGE);
 
-        // Fuerza el cambio de mapa cuando el timelimit llega a 0
         AddTimer(totalSeconds, ForceMapChange, TimerFlags.STOP_ON_MAPCHANGE);
 
-        Logger.LogInformation("[SimpleRTV] Timelimit: {Min}min. Auto-vote en {Delay}s, forced change en {Total}s.",
+        Logger.LogInformation("[SimpleRTV] Timelimit: {Min}min. Auto-vote in {Delay}s, forced change in {Total}s.",
             timeLimitMinutes, autoVoteDelay, totalSeconds);
     }
 
@@ -181,9 +176,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         return HookResult.Continue;
     }
 
-    // ── Comandos ───────────────────────────────────────────────────────────────
+    // ── Commands ──────────────────────────────────────────────────────────────
 
-    [ConsoleCommand("rtv", "Vota para cambiar el mapa")]
+    [ConsoleCommand("rtv", "Vote to change the map")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void OnRtvCommand(CCSPlayerController? caller, CommandInfo _)
     {
@@ -215,7 +210,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             PrintToAll("rtv.player_wants_change", caller.PlayerName, still);
     }
 
-    [ConsoleCommand("timeleft", "Muestra el tiempo restante en el mapa")]
+    [ConsoleCommand("timeleft", "Show remaining time on the current map")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void OnTimeleftCommand(CCSPlayerController? caller, CommandInfo _)
     {
@@ -244,7 +239,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         PrintToPlayer(caller, "timeleft.remaining", minutes, $"{seconds:D2}");
     }
 
-    [ConsoleCommand("nominate", "Nomina un mapa para el próximo voto")]
+    [ConsoleCommand("nominate", "Nominate a map for the next vote")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void OnNominateCommand(CCSPlayerController? caller, CommandInfo _)
     {
@@ -296,7 +291,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _wasdMenu.OpenMenu(caller, menu);
     }
 
-    [ConsoleCommand("votemode", "Alterna entre menú WASD y voto por chat")]
+    [ConsoleCommand("votemode", "Toggle between WASD menu and chat voting")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void OnVoteModeCommand(CCSPlayerController? caller, CommandInfo _)
     {
@@ -331,7 +326,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         FireAndForget(_db.SaveChatModeAsync(caller.SteamID.ToString(), switchToChat));
     }
 
-    [ConsoleCommand("css_frtv", "Fuerza el inicio de una votación de mapa (solo root)")]
+    [ConsoleCommand("css_frtv", "Force a map vote (root only)")]
     [RequiresPermissions("@css/root")]
     public void OnForceRtvCommand(CCSPlayerController? caller, CommandInfo info)
     {
@@ -349,7 +344,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         StartVote(auto: false);
     }
 
-    [ConsoleCommand("nomlist", "Muestra los mapas nominados")]
+    [ConsoleCommand("nomlist", "Show current map nominations")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void OnNomlistCommand(CCSPlayerController? caller, CommandInfo _)
     {
@@ -371,7 +366,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         }
     }
 
-    // ── Lógica de votación ─────────────────────────────────────────────────────
+    // ── Vote logic ────────────────────────────────────────────────────────────
 
     private void StartAutoVote()
     {
@@ -391,7 +386,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             return;
         }
 
-        // Nominados tienen prioridad; el resto se rellena aleatoriamente
+        // Nominated maps take priority; remaining slots are filled randomly
         var nominatedKeys = _nominate.GetNominatedMaps()
             .Where(k => !k.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
             .Take(Config.MapsInVote)
@@ -453,28 +448,24 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (_voteIsAuto)
         {
-            // Votación automática: guardar y cambiar al final de ronda (o cuando expire el timelimit)
+            // Auto-vote: store winner and apply at round end
             _pendingMap = winnerKey;
             PrintToAll("rtv.vote_ended", display);
         }
         else
         {
-            // Votación manual (RTV): cambiar inmediatamente
+            // Manual RTV: change immediately after a short delay
             PrintToAll("rtv.changing_now", display);
             AddTimer(5f, () => _mapService.ChangeMap(winnerKey), TimerFlags.STOP_ON_MAPCHANGE);
         }
     }
 
-    /// <summary>
-    /// Se llama cuando el timelimit llega a 0.
-    /// Si hay un mapa votado, cambia a ese. Si no, elige uno aleatorio.
-    /// </summary>
+    // Called when timelimit reaches 0. If a map was voted, OnRoundEnd will apply it.
+    // If not, pick a random map and let OnRoundEnd handle the change.
     private void ForceMapChange()
     {
-        // Si ya hay un mapa pendiente (de la votación automática), OnRoundEnd lo cambiará
         if (_pendingMap != null) return;
 
-        // Sin votación: elegir mapa aleatorio y esperar a OnRoundEnd
         var random = _mapService.Maps
             .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
             .OrderBy(_ => _rng.Next())
@@ -486,7 +477,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         PrintToAll("rtv.timelimit_no_vote");
     }
 
-    // ── Voto por chat ─────────────────────────────────────────────────────────
+    // ── Chat voting ───────────────────────────────────────────────────────────
 
     private HookResult OnPlayerSay(CCSPlayerController? caller, CommandInfo info)
     {
@@ -510,7 +501,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         if (_mapVote.TryVote(caller.Slot, mapKey))
         {
             PrintToPlayer(caller, "rtv.voted_for", label);
-            return HookResult.Handled; // no mostrar el número en el chat público
+            return HookResult.Handled; // suppress the number from public chat
         }
 
         return HookResult.Continue;
@@ -529,7 +520,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         }
     }
 
-    // ── Scoreboard en vivo ────────────────────────────────────────────────────
+    // ── Live scoreboard ───────────────────────────────────────────────────────
 
     private void UpdateVoteScoreboard()
     {
@@ -544,10 +535,11 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         var votes = _mapVote.Votes;
         int maxVotes = votes.Values.DefaultIfEmpty(0).Max();
+        int totalVotes = votes.Values.Sum();
 
         var sb = new StringBuilder();
         sb.Append("<div>");
-        sb.Append("<b><font color='#ff4444' class='fontSize-m'>Votación de mapa</font></b><br>");
+        sb.Append("<b><font color='#ff4444' class='fontSize-m'>Map Vote</font></b><br>");
 
         foreach (var kv in votes.OrderByDescending(v => v.Value))
         {
@@ -558,8 +550,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             sb.Append($"<font color='{nameColor}' class='fontSize-m'>{display}</font>  <font color='#88ff88'>{bar}</font>  <font color='white'>{count}</font><br>");
         }
 
-        int totalVotes = votes.Values.Sum();
-        sb.Append($"<br><font color='gray' class='fontSize-sm'>Ya votaste ✓  |  Votos: {totalVotes}</font>");
+        sb.Append($"<br><font color='gray' class='fontSize-sm'>You voted ✓  |  Votes: {totalVotes}</font>");
         sb.Append("</div>");
 
         return sb.ToString();
@@ -572,7 +563,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
                 player.PrintToCenterHtml(" ");
     }
 
-    // ── Helpers de localización ────────────────────────────────────────────────
+    // ── Localization helpers ──────────────────────────────────────────────────
 
     private void PrintToPlayer(CCSPlayerController player, string key, params object[] args)
     {
@@ -586,7 +577,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             PrintToPlayer(player, key, args);
     }
 
-    // ── Helpers generales ──────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static void FireAndForget(Task _) { }
 
