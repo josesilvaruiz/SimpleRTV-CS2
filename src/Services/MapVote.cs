@@ -15,6 +15,7 @@ public class MapVote
     private readonly Dictionary<string, int> _votes = new();
     private readonly HashSet<int> _voters = new();
     private List<KeyValuePair<string, MapInfo>> _candidates = new();
+    private readonly Dictionary<string, WasdMenuOption> _optionByMap = new();
     private WasdMenu? _activeMenu;
     private Timer? _timer = null;
 
@@ -32,6 +33,8 @@ public class MapVote
         if (!_votes.ContainsKey(mapKey)) return false;
         _voters.Add(slot);
         _votes[mapKey]++;
+        if (_optionByMap.TryGetValue(mapKey, out var opt))
+            opt.Count = _votes[mapKey];
         return true;
     }
 
@@ -51,12 +54,14 @@ public class MapVote
         IsInProgress = true;
         _votes.Clear();
         _voters.Clear();
+        _optionByMap.Clear();
         _candidates = candidates;
 
         foreach (var kv in candidates)
             _votes[kv.Key] = 0;
 
         var menu = wasdManager.CreateMenu(localizer["vote.menu_title"]);
+        menu.DisplayOptionsCount = true;
         _activeMenu = menu;
 
         foreach (var kv in candidates)
@@ -64,13 +69,17 @@ public class MapVote
             string mapKey = kv.Key;
             string label = string.IsNullOrEmpty(kv.Value.Display) ? kv.Key : kv.Value.Display;
 
-            menu.Add(label, (player, _) =>
+            menu.Add(label, (player, opt) =>
             {
                 if (!TryVote(player.Slot, mapKey)) return;
+                opt.Count = _votes[mapKey];
                 wasdManager.CloseMenu(player);
                 using (new WithTemporaryCulture(player.GetLanguage()))
                     player.PrintToChat($"{Prefix} {localizer["rtv.voted_for", label]}");
             });
+
+            // keep a reference to update the count when other players vote
+            _optionByMap[mapKey] = menu.Options.Last!.Value;
         }
 
         foreach (var player in menuPlayers)
@@ -87,6 +96,7 @@ public class MapVote
     {
         _votes.Clear();
         _voters.Clear();
+        _optionByMap.Clear();
         _candidates = new();
         _activeMenu = null;
         _timer?.Kill();

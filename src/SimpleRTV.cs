@@ -439,15 +439,16 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         _scoreboardTimer?.Kill();
         _scoreboardTimer = null;
-        ClearScoreboardForAll();
 
         if (winnerKey == null)
         {
+            ClearScoreboardForAll();
             PrintToAll("rtv.nobody_voted");
             return;
         }
 
         string display = _mapService.GetDisplayName(winnerKey);
+        ShowResultForAll(display);
 
         if (_voteIsAuto)
         {
@@ -556,17 +557,18 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private void UpdateVoteScoreboard()
     {
         if (!_mapVote.IsInProgress) return;
-        string html = BuildScoreboardHtml();
+        _wasdMenu.RefreshAll(); // update vote counts inside open WASD menus
         foreach (var player in GetValidPlayers())
             if (!_wasdMenu.HasActiveMenu(player.Slot))
-                player.PrintToCenterHtml(html);
+                player.PrintToCenterHtml(BuildScoreboardHtml(player.Slot));
     }
 
-    private string BuildScoreboardHtml()
+    private string BuildScoreboardHtml(int playerSlot)
     {
         var votes = _mapVote.Votes;
         int maxVotes = votes.Values.DefaultIfEmpty(0).Max();
         int totalVotes = votes.Values.Sum();
+        bool hasVoted = _mapVote.HasVoted(playerSlot);
 
         var sb = new StringBuilder();
         sb.Append("<div>");
@@ -581,17 +583,35 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             sb.Append($"<font color='{nameColor}' class='fontSize-m'>{display}</font>  <font color='#88ff88'>{bar}</font>  <font color='white'>{count}</font><br>");
         }
 
-        sb.Append($"<br><font color='gray' class='fontSize-sm'>You voted ✓  |  Votes: {totalVotes}</font>");
+        string footer = hasVoted
+            ? $"<font color='#88ff88'>You voted ✓</font>  <font color='gray'>|  Votes: {totalVotes}</font>"
+            : $"<font color='gray'>Type a number to vote  |  Votes: {totalVotes}</font>";
+        sb.Append($"<br><font class='fontSize-sm'>{footer}</font>");
         sb.Append("</div>");
 
         return sb.ToString();
     }
 
+    private void ShowResultForAll(string mapDisplay)
+    {
+        string html = $"<div><b><font color='#ff4444' class='fontSize-l'>Vote ended!</font></b><br>" +
+                      $"<font color='#ffcc00' class='fontSize-l'>{mapDisplay}</font><br>" +
+                      $"<font color='gray' class='fontSize-sm'>wins the vote</font></div>";
+
+        foreach (var player in GetValidPlayers())
+            player.PrintToCenterHtml(html);
+
+        AddTimer(6f, () =>
+        {
+            foreach (var player in GetValidPlayers())
+                player.PrintToCenterHtml(" ");
+        }, TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
     private void ClearScoreboardForAll()
     {
         foreach (var player in GetValidPlayers())
-            if (!_wasdMenu.HasActiveMenu(player.Slot))
-                player.PrintToCenterHtml(" ");
+            player.PrintToCenterHtml(" ");
     }
 
     // ── Localization helpers ──────────────────────────────────────────────────

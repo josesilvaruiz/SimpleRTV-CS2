@@ -100,10 +100,14 @@ public class WasdMenuPlayer
         int shown = 0;
         while (shown < VisibleOptions && node != null)
         {
+            string countSuffix = (MainMenu.DisplayOptionsCount && node.Value.Count > 0)
+                ? $" <font color='#88ff88'>({node.Value.Count})</font>"
+                : "";
+
             if (node == CurrentChoice)
-                sb.AppendLine($"<font color='yellow'>►[</font> <font color='#9acd32' class='fontSize-m'>{node.Value.OptionDisplay}</font> <font color='yellow'>]◄</font><br>");
+                sb.AppendLine($"<font color='yellow'>►[</font> <font color='#9acd32' class='fontSize-m'>{node.Value.OptionDisplay}</font>{countSuffix} <font color='yellow'>]◄</font><br>");
             else
-                sb.AppendLine($"<font color='white' class='fontSize-m'>{node.Value.OptionDisplay}</font><br>");
+                sb.AppendLine($"<font color='white' class='fontSize-m'>{node.Value.OptionDisplay}</font>{countSuffix}<br>");
 
             shown++;
             node = node.Next;

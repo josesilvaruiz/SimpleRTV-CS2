@@ -45,6 +45,12 @@ public class WasdMenuManager
 
     public bool HasActiveMenu(int slot) => _players.TryGetValue(slot, out var p) && p.HasActiveMenu;
 
+    public void RefreshAll()
+    {
+        foreach (var mp in _players.Values.Where(p => p.HasActiveMenu))
+            mp.UpdateHtml();
+    }
+
     public WasdMenu CreateMenu(string title) => new WasdMenu { Title = title };
 
     public void OnTick()

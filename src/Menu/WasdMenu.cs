@@ -5,6 +5,7 @@ namespace SimpleRTV;
 public class WasdMenu
 {
     public string Title { get; set; } = "";
+    public bool DisplayOptionsCount { get; set; } = false;
     public LinkedList<WasdMenuOption> Options { get; set; } = new();
 
     public void Add(string display, Action<CCSPlayerController, WasdMenuOption> onChoose)

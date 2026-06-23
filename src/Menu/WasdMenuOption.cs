@@ -8,4 +8,5 @@ public class WasdMenuOption
     public string OptionDisplay { get; set; } = "";
     public Action<CCSPlayerController, WasdMenuOption>? OnChoose { get; set; }
     public int Index { get; set; }
+    public int Count { get; set; } = 0;
 }
