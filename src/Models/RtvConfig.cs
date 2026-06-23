@@ -22,4 +22,12 @@ public class RtvConfig : BasePluginConfig
 
     [JsonPropertyName("TriggerSecondsBeforeEnd")]
     public int TriggerSecondsBeforeEnd { get; set; } = 120;
+
+    /// <summary>Steam Workshop Collection ID to auto-populate the map list. Leave empty to use only rtv_maps.json.</summary>
+    [JsonPropertyName("WorkshopCollectionId")]
+    public string WorkshopCollectionId { get; set; } = "";
+
+    /// <summary>How long (hours) to keep the workshop map cache before re-fetching from Steam API.</summary>
+    [JsonPropertyName("WorkshopCacheHours")]
+    public int WorkshopCacheHours { get; set; } = 24;
 }

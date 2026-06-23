@@ -31,6 +31,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     private readonly WasdMenuManager _wasdMenu = new();
     private PlayerPrefsDb _db = null!;
+    private WorkshopService _workshop = null!;
 
     private bool _rtvAllowed = false;
     private DateTime _mapStartTime = DateTime.MinValue;
@@ -59,6 +60,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         string dbPath = Path.Combine(ModuleDirectory, "..", "..", "data", "SimpleRTV", "prefs.db");
         _db = new PlayerPrefsDb(dbPath);
+        _workshop = new WorkshopService(Logger);
 
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         RegisterListener<Listeners.OnClientDisconnectPost>(OnClientDisconnect);
@@ -125,8 +127,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         else
             _rtvAllowed = true;
 
-        // Delay mp_timelimit read to ensure the map has fully loaded
+        // Delay reads to ensure the map has fully loaded
         AddTimer(3f, ScheduleTimeLimitTimers, TimerFlags.STOP_ON_MAPCHANGE);
+        AddTimer(3f, FetchWorkshopMaps, TimerFlags.STOP_ON_MAPCHANGE);
     }
 
     private void ScheduleTimeLimitTimers()
@@ -475,6 +478,34 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         _pendingMap = random.Key;
         PrintToAll("rtv.timelimit_no_vote");
+    }
+
+    // ── Workshop auto-population ──────────────────────────────────────────────
+
+    private void FetchWorkshopMaps()
+    {
+        string collectionId = GetCollectionId();
+        if (string.IsNullOrEmpty(collectionId)) return;
+
+        string cachePath = Path.GetFullPath(
+            Path.Combine(ModuleDirectory, "..", "..", "configs", "plugins", ModuleName, "workshop_cache.json"));
+
+        _workshop.FetchAndCacheAsync(collectionId, cachePath, Config.WorkshopCacheHours)
+            .ContinueWith(t =>
+            {
+                if (!t.IsCompletedSuccessfully || t.Result.Count == 0) return;
+                Server.NextFrame(() => _mapService.MergeWorkshopMaps(t.Result));
+            });
+    }
+
+    private string GetCollectionId()
+    {
+        if (!string.IsNullOrEmpty(Config.WorkshopCollectionId))
+            return Config.WorkshopCollectionId;
+
+        // Auto-detect from server launch argument
+        var cvar = ConVar.Find("host_workshop_collection");
+        return cvar?.StringValue ?? "";
     }
 
     // ── Chat voting ───────────────────────────────────────────────────────────

@@ -48,6 +48,23 @@ public class MapService
         }
     }
 
+    /// <summary>
+    /// Merges workshop maps into the current map list.
+    /// Existing keys from rtv_maps.json are NOT overwritten (static file takes precedence).
+    /// </summary>
+    public void MergeWorkshopMaps(Dictionary<string, MapInfo> workshopMaps)
+    {
+        int added = 0;
+        foreach (var kv in workshopMaps)
+            if (!_maps.ContainsKey(kv.Key))
+            {
+                _maps[kv.Key] = kv.Value;
+                added++;
+            }
+        if (added > 0)
+            _logger.LogInformation("[SimpleRTV] Merged {Count} workshop maps.", added);
+    }
+
     /// <summary>Returns the display name for a map key, falling back to the key itself.</summary>
     public string GetDisplayName(string mapKey)
     {
