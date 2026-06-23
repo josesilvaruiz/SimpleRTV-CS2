@@ -1,0 +1,13 @@
+{
+  "de_dust2":      { "ws": false, "display": "Dust 2",      "mapid": "" },
+  "de_mirage":     { "ws": false, "display": "Mirage",      "mapid": "" },
+  "de_inferno":    { "ws": false, "display": "Inferno",     "mapid": "" },
+  "de_nuke":       { "ws": false, "display": "Nuke",        "mapid": "" },
+  "de_overpass":   { "ws": false, "display": "Overpass",    "mapid": "" },
+  "de_anubis":     { "ws": false, "display": "Anubis",      "mapid": "" },
+  "de_ancient":    { "ws": false, "display": "Ancient",     "mapid": "" },
+  "de_vertigo":    { "ws": false, "display": "Vertigo",     "mapid": "" },
+  "de_train":      { "ws": false, "display": "Train",       "mapid": "" },
+  "cs_office":     { "ws": false, "display": "Office",      "mapid": "" },
+  "cs_italy":      { "ws": false, "display": "Italy",       "mapid": "" }
+}
