@@ -18,7 +18,7 @@ public class RtvConfig : BasePluginConfig
     public int MapsInVote { get; set; } = 5;
 
     [JsonPropertyName("MapsFile")]
-    public string MapsFile { get; set; } = "cfg/rtv_maps.json";
+    public string MapsFile { get; set; } = "rtv_maps.json";
 
     [JsonPropertyName("TriggerSecondsBeforeEnd")]
     public int TriggerSecondsBeforeEnd { get; set; } = 120;

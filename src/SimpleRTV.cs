@@ -581,8 +581,14 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     private static void FireAndForget(Task _) { }
 
-    private string GetMapsFilePath() =>
-        Path.Combine(Server.GameDirectory, "csgo", Config.MapsFile);
+    private string GetMapsFilePath()
+    {
+        if (Path.IsPathRooted(Config.MapsFile))
+            return Config.MapsFile;
+
+        string configDir = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "configs", "plugins", ModuleName));
+        return Path.Combine(configDir, Config.MapsFile);
+    }
 
     private IEnumerable<CCSPlayerController> GetValidPlayers() =>
         Utilities.GetPlayers().Where(p => p != null && p.IsValid && !p.IsBot && !p.IsHLTV);
