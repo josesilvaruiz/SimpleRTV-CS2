@@ -8,7 +8,7 @@
   "rtv.auto_vote_started": "Time is almost up! Automatic map vote started.",
   "rtv.voted_for": "You voted for {0}.",
   "rtv.nobody_voted": "Nobody voted. Keeping the current map.",
-  "rtv.vote_ended": "Vote ended! Map will change to {0} at round end.",
+  "rtv.vote_ended": "Vote ended! Map will change to {0} at round end or when time runs out.",
   "rtv.changing_now": "Changing map to {0}...",
   "rtv.timelimit_no_vote": "Time is up! Changing to a random map...",
   "timeleft.no_limit": "This map has no time limit.",

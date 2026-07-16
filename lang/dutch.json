@@ -8,7 +8,7 @@
   "rtv.auto_vote_started": "De tijd raakt op! Automatische stemming gestart.",
   "rtv.voted_for": "Je hebt gestemd op {0}.",
   "rtv.nobody_voted": "Niemand heeft gestemd. Huidige map blijft.",
-  "rtv.vote_ended": "Stemming afgelopen! Map wisselt naar {0} aan het einde van de ronde.",
+  "rtv.vote_ended": "Stemming afgelopen! Map wisselt naar {0} aan het einde van de ronde of als de tijd om is.",
   "rtv.changing_now": "Wisselen naar map {0}...",
   "rtv.timelimit_no_vote": "Tijd is op! Wisselen naar een willekeurige map...",
   "timeleft.no_limit": "Deze map heeft geen tijdslimiet.",

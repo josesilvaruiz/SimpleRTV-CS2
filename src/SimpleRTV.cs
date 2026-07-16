@@ -39,6 +39,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private readonly Random _rng = new();
 
     private string? _pendingMap = null;
+    private bool _changeScheduled = false;
     private bool _voteIsAuto = false;
     private Timer? _scoreboardTimer = null;
     private readonly HashSet<int> _chatModeSlots = new();
@@ -120,6 +121,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _nominate.Reset();
         _rtvAllowed = false;
         _pendingMap = null;
+        _changeScheduled = false;
         _mapStartTime = DateTime.Now;
 
         _mapService.Load(GetMapsFilePath());
@@ -143,7 +145,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         if (timeLimitMinutes <= 0 || Config.TriggerSecondsBeforeEnd <= 0) return;
 
         float totalSeconds = timeLimitMinutes * 60f;
-        float autoVoteDelay = totalSeconds - Config.TriggerSecondsBeforeEnd;
+        // Start the auto-vote early enough that it always finishes before the forced change
+        float triggerLead = Math.Max(Config.TriggerSecondsBeforeEnd, Config.VoteSeconds + 10);
+        float autoVoteDelay = totalSeconds - triggerLead;
 
         if (autoVoteDelay > 0)
             AddTimer(autoVoteDelay, StartAutoVote, TimerFlags.STOP_ON_MAPCHANGE);
@@ -175,6 +179,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         {
             string map = _pendingMap;
             _pendingMap = null;
+            _changeScheduled = true;
             PrintToAll("rtv.changing_now", _mapService.GetDisplayName(map));
             AddTimer(3f, () => _mapService.ChangeMap(map), TimerFlags.STOP_ON_MAPCHANGE);
         }
@@ -189,7 +194,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         if (caller == null || !caller.IsValid) return;
 
-        if (!_rtvAllowed)
+        if (!_rtvAllowed || _changeScheduled)
         {
             PrintToPlayer(caller, "rtv.not_available");
             return;
@@ -335,7 +340,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     [RequiresPermissions("@css/root")]
     public void OnForceRtvCommand(CCSPlayerController? caller, CommandInfo info)
     {
-        if (_mapVote.IsInProgress)
+        if (_mapVote.IsInProgress || _changeScheduled)
         {
             if (caller != null)
                 PrintToPlayer(caller, "rtv.vote_in_progress");
@@ -375,14 +380,14 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     private void StartAutoVote()
     {
-        if (_mapVote.IsInProgress || _pendingMap != null) return;
+        if (_mapVote.IsInProgress || _pendingMap != null || _changeScheduled) return;
         PrintToAll("rtv.auto_vote_started");
         StartVote(auto: true);
     }
 
     private void StartVote(bool auto)
     {
-        if (_mapVote.IsInProgress) return;
+        if (_mapVote.IsInProgress || _changeScheduled) return;
         _voteIsAuto = auto;
 
         if (!_mapService.HasMaps)
@@ -412,7 +417,19 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         var candidates = nominatedCandidates.Concat(randomCandidates).ToList();
 
         if (candidates.Count == 0)
-            candidates = _mapService.Maps.OrderBy(_ => _rng.Next()).Take(Config.MapsInVote).ToList();
+        {
+            candidates = _mapService.Maps
+                .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(_ => _rng.Next())
+                .Take(Config.MapsInVote)
+                .ToList();
+
+            if (candidates.Count == 0)
+            {
+                PrintToAll("rtv.no_maps");
+                return;
+            }
+        }
 
         if (!auto)
             PrintToAll("rtv.vote_started", Config.VoteSeconds);
@@ -461,26 +478,53 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         else
         {
             // Manual RTV: change immediately after a short delay
+            _changeScheduled = true;
             PrintToAll("rtv.changing_now", display);
             AddTimer(5f, () => _mapService.ChangeMap(winnerKey), TimerFlags.STOP_ON_MAPCHANGE);
         }
     }
 
-    // Called when timelimit reaches 0. If a map was voted, OnRoundEnd will apply it.
-    // If not, pick a random map and let OnRoundEnd handle the change.
+    // Called when mp_timelimit reaches 0. Forces the map change immediately instead
+    // of waiting for the round to end naturally.
     private void ForceMapChange()
     {
-        if (_pendingMap != null) return;
+        // A change is already on its way (voted winner or round-end apply) — don't compete with it
+        if (_changeScheduled) return;
 
-        var random = _mapService.Maps
-            .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(_ => _rng.Next())
-            .FirstOrDefault();
+        string? targetMap = _pendingMap;
+        _pendingMap = null;
 
-        if (random.Key == null) return;
+        if (_mapVote.IsInProgress)
+        {
+            // Vote is still running past the deadline: take the current leader and cut it short.
+            targetMap = _mapVote.CurrentLeader() ?? targetMap;
+            _mapVote.Reset();
+            _scoreboardTimer?.Kill();
+            _scoreboardTimer = null;
+            _wasdMenu.CloseAll();
+            ClearScoreboardForAll();
+        }
 
-        _pendingMap = random.Key;
-        PrintToAll("rtv.timelimit_no_vote");
+        if (targetMap == null)
+        {
+            var random = _mapService.Maps
+                .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(_ => _rng.Next())
+                .FirstOrDefault();
+
+            if (random.Key == null) return;
+
+            targetMap = random.Key;
+            PrintToAll("rtv.timelimit_no_vote");
+        }
+        else
+        {
+            PrintToAll("rtv.changing_now", _mapService.GetDisplayName(targetMap));
+        }
+
+        _changeScheduled = true;
+        string map = targetMap;
+        AddTimer(3f, () => _mapService.ChangeMap(map), TimerFlags.STOP_ON_MAPCHANGE);
     }
 
     // ── Workshop auto-population ──────────────────────────────────────────────

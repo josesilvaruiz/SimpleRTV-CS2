@@ -8,7 +8,7 @@
   "rtv.auto_vote_started": "Il tempo sta per scadere! Votazione automatica avviata.",
   "rtv.voted_for": "Hai votato per {0}.",
   "rtv.nobody_voted": "Nessuno ha votato. Mappa attuale mantenuta.",
-  "rtv.vote_ended": "Votazione terminata! La mappa cambierà a {0} a fine round.",
+  "rtv.vote_ended": "Votazione terminata! La mappa cambierà a {0} a fine round o allo scadere del tempo.",
   "rtv.changing_now": "Cambio alla mappa {0}...",
   "rtv.timelimit_no_vote": "Tempo scaduto! Cambio a una mappa casuale...",
   "timeleft.no_limit": "Questa mappa non ha limite di tempo.",

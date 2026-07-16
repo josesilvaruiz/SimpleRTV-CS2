@@ -8,7 +8,7 @@
   "rtv.auto_vote_started": "Le temps est presque écoulé ! Vote automatique lancé.",
   "rtv.voted_for": "Tu as voté pour {0}.",
   "rtv.nobody_voted": "Personne n'a voté. Carte actuelle maintenue.",
-  "rtv.vote_ended": "Vote terminé ! La carte changera pour {0} en fin de round.",
+  "rtv.vote_ended": "Vote terminé ! La carte changera pour {0} en fin de round ou à la fin du temps.",
   "rtv.changing_now": "Changement vers la carte {0}...",
   "rtv.timelimit_no_vote": "Temps écoulé ! Changement vers une carte aléatoire...",
   "timeleft.no_limit": "Cette carte n'a pas de limite de temps.",

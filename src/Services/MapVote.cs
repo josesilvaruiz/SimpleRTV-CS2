@@ -87,8 +87,9 @@ public class MapVote
 
         _timer = addTimer(voteSeconds, () =>
         {
-            IsInProgress = false;
-            onVoteEnd(PickWinner());
+            string? winner = PickWinner();
+            Reset();
+            onVoteEnd(winner);
         }, TimerFlags.STOP_ON_MAPCHANGE);
     }
 
@@ -111,4 +112,7 @@ public class MapVote
 
         return _votes.MaxBy(kv => kv.Value).Key;
     }
+
+    /// <summary>Returns the map currently in the lead while a vote is in progress, or null if nobody has voted yet.</summary>
+    public string? CurrentLeader() => PickWinner();
 }

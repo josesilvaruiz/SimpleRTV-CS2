@@ -8,7 +8,7 @@
   "rtv.auto_vote_started": "Süre bitiyor! Otomatik harita oylaması başladı.",
   "rtv.voted_for": "{0} için oy kullandın.",
   "rtv.nobody_voted": "Kimse oy vermedi. Mevcut harita kalıyor.",
-  "rtv.vote_ended": "Oylama bitti! Tur sonunda {0} haritasına geçilecek.",
+  "rtv.vote_ended": "Oylama bitti! Tur sonunda veya süre dolduğunda {0} haritasına geçilecek.",
   "rtv.changing_now": "{0} haritasına geçiliyor...",
   "rtv.timelimit_no_vote": "Süre doldu! Rastgele bir haritaya geçiliyor...",
   "timeleft.no_limit": "Bu haritanın zaman sınırı yok.",
