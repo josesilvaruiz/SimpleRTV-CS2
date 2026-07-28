@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using CounterStrikeSharp.API.Core;
 
@@ -30,4 +31,17 @@ public class RtvConfig : BasePluginConfig
     /// <summary>How long (hours) to keep the workshop map cache before re-fetching from Steam API.</summary>
     [JsonPropertyName("WorkshopCacheHours")]
     public int WorkshopCacheHours { get; set; } = 24;
+
+    /// <summary>
+    /// Workshop IDs to always exclude from RTV/nominate, regardless of rtv_maps.json
+    /// or the workshop collection sync (e.g. maps known to crash the server).
+    /// Matched against both the merged workshop entries (keyed by ID) and any
+    /// static rtv_maps.json entry whose "mapid" matches.
+    /// </summary>
+    [JsonPropertyName("BlacklistedWorkshopIds")]
+    public List<string> BlacklistedWorkshopIds { get; set; } = new();
+
+    /// <summary>Map names (rtv_maps.json keys) to always exclude, for non-workshop entries.</summary>
+    [JsonPropertyName("BlacklistedMapNames")]
+    public List<string> BlacklistedMapNames { get; set; } = new();
 }

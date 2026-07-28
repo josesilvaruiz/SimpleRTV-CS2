@@ -18,7 +18,7 @@ namespace SimpleRTV;
 public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 {
     public override string ModuleName => "SimpleRTV";
-    public override string ModuleVersion => "1.0.0";
+    public override string ModuleVersion => "1.1.0";
     public override string ModuleAuthor => "josea";
     public override string ModuleDescription => "Simple RTV for CS2";
 
@@ -75,6 +75,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (hotReload)
         {
+            _mapService.SetBlacklist(Config.BlacklistedWorkshopIds, Config.BlacklistedMapNames);
             _mapService.Load(GetMapsFilePath());
             _rtvAllowed = true;
             foreach (var p in GetValidPlayers())
@@ -124,6 +125,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _changeScheduled = false;
         _mapStartTime = DateTime.Now;
 
+        _mapService.SetBlacklist(Config.BlacklistedWorkshopIds, Config.BlacklistedMapNames);
         _mapService.Load(GetMapsFilePath());
 
         if (Config.RtvDelaySeconds > 0)

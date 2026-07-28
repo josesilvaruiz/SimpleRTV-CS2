@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using CounterStrikeSharp.API;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,13 @@ public class MapService
     private readonly ILogger _logger;
     private Dictionary<string, MapInfo> _maps = new();
 
+    // Maps known to crash the server (physics/collision hangs, etc). Checked against
+    // both the rtv_maps.json key (map name) and MapInfo.MapId (workshop id), because
+    // workshop-sourced entries are keyed by id while static entries are keyed by name
+    // — a single list can't rely on key shape alone.
+    private HashSet<string> _blacklistIds = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _blacklistNames = new(StringComparer.OrdinalIgnoreCase);
+
     public MapService(ILogger logger)
     {
         _logger = logger;
@@ -19,6 +27,16 @@ public class MapService
 
     public IReadOnlyDictionary<string, MapInfo> Maps => _maps;
     public bool HasMaps => _maps.Count > 0;
+
+    public void SetBlacklist(IEnumerable<string> workshopIds, IEnumerable<string> mapNames)
+    {
+        _blacklistIds = new HashSet<string>(workshopIds, StringComparer.OrdinalIgnoreCase);
+        _blacklistNames = new HashSet<string>(mapNames, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private bool IsBlacklisted(string key, MapInfo info) =>
+        _blacklistNames.Contains(key) ||
+        (!string.IsNullOrEmpty(info.MapId) && _blacklistIds.Contains(info.MapId));
 
     public void Load(string filePath)
     {
@@ -39,6 +57,10 @@ public class MapService
                 return;
             }
 
+            int removed = RemoveKeys(parsed, k => IsBlacklisted(k, parsed[k]));
+            if (removed > 0)
+                _logger.LogInformation("[SimpleRTV] {Count} blacklisted map(s) filtered out of rtv_maps.json.", removed);
+
             _maps = parsed;
             _logger.LogInformation("[SimpleRTV] {Count} maps loaded.", _maps.Count);
         }
@@ -51,18 +73,35 @@ public class MapService
     /// <summary>
     /// Merges workshop maps into the current map list.
     /// Existing keys from rtv_maps.json are NOT overwritten (static file takes precedence).
+    /// Blacklisted workshop ids are skipped entirely — this is the entry point that
+    /// re-adds crashed maps every map change if they're still in the Steam collection,
+    /// so filtering here (not just in rtv_maps.json) is what actually keeps them out.
     /// </summary>
     public void MergeWorkshopMaps(Dictionary<string, MapInfo> workshopMaps)
     {
-        int added = 0;
+        int added = 0, skipped = 0;
         foreach (var kv in workshopMaps)
+        {
+            if (IsBlacklisted(kv.Key, kv.Value))
+            {
+                skipped++;
+                continue;
+            }
             if (!_maps.ContainsKey(kv.Key))
             {
                 _maps[kv.Key] = kv.Value;
                 added++;
             }
-        if (added > 0)
-            _logger.LogInformation("[SimpleRTV] Merged {Count} workshop maps.", added);
+        }
+        if (added > 0 || skipped > 0)
+            _logger.LogInformation("[SimpleRTV] Merged {Count} workshop maps ({Skipped} blacklisted skipped).", added, skipped);
+    }
+
+    private static int RemoveKeys(Dictionary<string, MapInfo> dict, Func<string, bool> predicate)
+    {
+        var toRemove = dict.Keys.Where(predicate).ToList();
+        foreach (var k in toRemove) dict.Remove(k);
+        return toRemove.Count;
     }
 
     /// <summary>Returns the display name for a map key, falling back to the key itself.</summary>
