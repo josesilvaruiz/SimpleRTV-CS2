@@ -18,6 +18,14 @@ public class RtvConfig : BasePluginConfig
     [JsonPropertyName("MapsInVote")]
     public int MapsInVote { get; set; } = 5;
 
+    /// <summary>How many "minigame" (non-surf) maps to always include in each vote.</summary>
+    [JsonPropertyName("MinigameSlotsInVote")]
+    public int MinigameSlotsInVote { get; set; } = 4;
+
+    /// <summary>How many surf maps (key starts with "surf_") to always include in each vote.</summary>
+    [JsonPropertyName("SurfSlotsInVote")]
+    public int SurfSlotsInVote { get; set; } = 2;
+
     [JsonPropertyName("MapsFile")]
     public string MapsFile { get; set; } = "rtv_maps.json";
 

@@ -18,7 +18,7 @@ namespace SimpleRTV;
 public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 {
     public override string ModuleName => "SimpleRTV";
-    public override string ModuleVersion => "1.1.0";
+    public override string ModuleVersion => "1.2.0";
     public override string ModuleAuthor => "josea";
     public override string ModuleDescription => "Simple RTV for CS2";
 
@@ -43,6 +43,25 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private bool _voteIsAuto = false;
     private Timer? _scoreboardTimer = null;
     private readonly HashSet<int> _chatModeSlots = new();
+
+    // Mapas ya mostrados como opción de voto recientemente, por categoría — para no repetir
+    // los mismos mapas votación tras votación. Se vacía sola cuando el pool restante de esa
+    // categoría ya no llega para rellenar los huecos (en vez de quedarse sin mapas que ofrecer).
+    private readonly HashSet<string> _recentMinigame = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _recentSurf = new(StringComparer.OrdinalIgnoreCase);
+
+    // Los mapas que vienen de la sincronización de la colección de Workshop están indexados
+    // por su ID numérico (no por el nombre del mapa) — el nombre real solo está en
+    // MapInfo.Display, así que la categoría hay que mirarla ahí, no en la clave.
+    private static bool IsSurfMap(MapInfo info) =>
+        info.Display.StartsWith("surf_", StringComparison.OrdinalIgnoreCase);
+
+    // Por la misma razón, comparar la clave contra Server.MapName solo funciona para las
+    // entradas estáticas de rtv_maps.json — para las de Workshop hay que mirar el Display.
+    private bool IsCurrentMap(string mapKey) =>
+        mapKey.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase) ||
+        (_mapService.Maps.TryGetValue(mapKey, out var info) &&
+         info.Display.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase));
 
     private static string Prefix => $" {ChatColors.Green}[RTV]{ChatColors.Default}";
 
@@ -269,7 +288,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         }
 
         var available = _mapService.Maps
-            .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
+            .Where(kv => !IsCurrentMap(kv.Key))
             .ToList();
 
         if (available.Count == 0) return;
@@ -398,39 +417,18 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             return;
         }
 
-        // Nominated maps take priority; remaining slots are filled randomly
+        // Nominated maps take priority within their own category; remaining slots per
+        // category are filled randomly (see BuildCandidateList).
         var nominatedKeys = _nominate.GetNominatedMaps()
-            .Where(k => !k.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
-            .Take(Config.MapsInVote)
+            .Where(k => !IsCurrentMap(k))
             .ToList();
 
-        var nominatedCandidates = nominatedKeys
-            .Where(k => _mapService.Maps.ContainsKey(k))
-            .Select(k => new KeyValuePair<string, MapInfo>(k, _mapService.Maps[k]))
-            .ToList();
-
-        var randomCandidates = _mapService.Maps
-            .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase)
-                         && !nominatedKeys.Contains(kv.Key))
-            .OrderBy(_ => _rng.Next())
-            .Take(Config.MapsInVote - nominatedCandidates.Count)
-            .ToList();
-
-        var candidates = nominatedCandidates.Concat(randomCandidates).ToList();
+        var candidates = BuildCandidateList(nominatedKeys);
 
         if (candidates.Count == 0)
         {
-            candidates = _mapService.Maps
-                .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(_ => _rng.Next())
-                .Take(Config.MapsInVote)
-                .ToList();
-
-            if (candidates.Count == 0)
-            {
-                PrintToAll("rtv.no_maps");
-                return;
-            }
+            PrintToAll("rtv.no_maps");
+            return;
         }
 
         if (!auto)
@@ -454,6 +452,69 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         _scoreboardTimer?.Kill();
         _scoreboardTimer = AddTimer(1.0f, UpdateVoteScoreboard, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    // Compone la votación con cuota fija: Config.MinigameSlotsInVote mapas normales +
+    // Config.SurfSlotsInVote de surf. Dentro de cada categoría, las nominaciones tienen
+    // prioridad y el resto se rellena al azar evitando repetir lo mostrado en votaciones
+    // recientes — hasta que el pool restante de esa categoría no llegue para rellenar los
+    // huecos, momento en el que se reinicia el historial de esa categoría en vez de
+    // ofrecer menos mapas de los pedidos.
+    private List<KeyValuePair<string, MapInfo>> BuildCandidateList(List<string> nominatedKeys)
+    {
+        var result = new List<KeyValuePair<string, MapInfo>>();
+        var usedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void FillCategory(bool wantSurf, int slots)
+        {
+            if (slots <= 0) return;
+
+            var nominatedForCategory = nominatedKeys
+                .Where(k => !usedKeys.Contains(k) && _mapService.Maps.TryGetValue(k, out var info)
+                            && IsSurfMap(info) == wantSurf)
+                .Take(slots)
+                .ToList();
+
+            foreach (var key in nominatedForCategory)
+            {
+                result.Add(new(key, _mapService.Maps[key]));
+                usedKeys.Add(key);
+            }
+
+            int remaining = slots - nominatedForCategory.Count;
+            if (remaining <= 0) return;
+
+            var recent = wantSurf ? _recentSurf : _recentMinigame;
+
+            var pool = _mapService.Maps
+                .Where(kv => !IsCurrentMap(kv.Key)
+                             && !usedKeys.Contains(kv.Key)
+                             && IsSurfMap(kv.Value) == wantSurf)
+                .ToList();
+
+            var freshPool = pool.Where(kv => !recent.Contains(kv.Key)).ToList();
+
+            // Si sin repetir no llega para rellenar los huecos, se reinicia el historial de
+            // esta categoría (vuelve a estar disponible el pool entero) en vez de ofrecer
+            // menos mapas de los pedidos.
+            var sourcePool = freshPool.Count >= remaining ? freshPool : pool;
+            if (sourcePool == pool) recent.Clear();
+
+            var picked = sourcePool.OrderBy(_ => _rng.Next()).Take(remaining).ToList();
+            foreach (var kv in picked)
+            {
+                result.Add(kv);
+                usedKeys.Add(kv.Key);
+            }
+        }
+
+        FillCategory(wantSurf: false, Config.MinigameSlotsInVote);
+        FillCategory(wantSurf: true, Config.SurfSlotsInVote);
+
+        foreach (var kv in result)
+            (IsSurfMap(kv.Value) ? _recentSurf : _recentMinigame).Add(kv.Key);
+
+        return result;
     }
 
     private void OnVoteEnd(string? winnerKey)
@@ -510,7 +571,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         if (targetMap == null)
         {
             var random = _mapService.Maps
-                .Where(kv => !kv.Key.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase))
+                .Where(kv => !IsCurrentMap(kv.Key))
                 .OrderBy(_ => _rng.Next())
                 .FirstOrDefault();
 
