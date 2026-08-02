@@ -52,4 +52,17 @@ public class RtvConfig : BasePluginConfig
     /// <summary>Map names (rtv_maps.json keys) to always exclude, for non-workshop entries.</summary>
     [JsonPropertyName("BlacklistedMapNames")]
     public List<string> BlacklistedMapNames { get; set; } = new();
+
+    /// <summary>
+    /// If the server boots on this map (the vanilla CS2 fallback when no valid map is configured,
+    /// e.g. after a crash/restart), auto-switch to DefaultFallbackMap instead. Leave either field
+    /// empty to disable. Replaces the external surf-default-watchdog.sh cron approach — this fires
+    /// immediately on map start instead of waiting for the next poll.
+    /// </summary>
+    [JsonPropertyName("DefaultFallbackTriggerMap")]
+    public string DefaultFallbackTriggerMap { get; set; } = "de_dust2";
+
+    /// <summary>Map key (must exist in rtv_maps.json / the synced workshop list) to switch to when DefaultFallbackTriggerMap loads.</summary>
+    [JsonPropertyName("DefaultFallbackMap")]
+    public string DefaultFallbackMap { get; set; } = "surf_utopia_njv";
 }

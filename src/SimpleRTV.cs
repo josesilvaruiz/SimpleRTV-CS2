@@ -155,6 +155,21 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         // Delay reads to ensure the map has fully loaded
         AddTimer(3f, ScheduleTimeLimitTimers, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(3f, FetchWorkshopMaps, TimerFlags.STOP_ON_MAPCHANGE);
+
+        // Auto-recover from the vanilla CS2 fallback map (e.g. after a crash/restart with no
+        // valid map configured) — fires immediately instead of waiting for an external cron
+        // watchdog to poll and catch it.
+        if (!string.IsNullOrWhiteSpace(Config.DefaultFallbackTriggerMap) &&
+            !string.IsNullOrWhiteSpace(Config.DefaultFallbackMap) &&
+            Server.MapName.Equals(Config.DefaultFallbackTriggerMap, StringComparison.OrdinalIgnoreCase))
+        {
+            AddTimer(3f, () =>
+            {
+                Logger.LogWarning("[SimpleRTV] Server booted on fallback map '{Trigger}', switching to '{Target}'",
+                    Config.DefaultFallbackTriggerMap, Config.DefaultFallbackMap);
+                _mapService.ChangeMap(Config.DefaultFallbackMap);
+            }, TimerFlags.STOP_ON_MAPCHANGE);
+        }
     }
 
     private void ScheduleTimeLimitTimers()
