@@ -58,6 +58,13 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private DateTime? _emptySince = null;
     private const float IdleCheckIntervalSeconds = 30f;
 
+    // Límite de tiempo con el servidor vacío: no se vota ni se cambia de mapa hasta que entre
+    // alguien. Los temporizadores se guardan para poder cancelar los viejos y rearmar uno nuevo
+    // (completo) cuando entra el primer jugador, en vez de dejar que dispare a los pocos segundos.
+    private Timer? _autoVoteTimer;
+    private Timer? _forceChangeTimer;
+    private bool _timelimitSkippedEmpty = false;
+
     // Mapas ya mostrados como opción de voto recientemente, por categoría — para no repetir
     // los mismos mapas votación tras votación. Se vacía sola cuando el pool restante de esa
     // categoría ya no llega para rellenar los huecos (en vez de quedarse sin mapas que ofrecer).
@@ -186,6 +193,15 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         _wasdMenu.RegisterPlayer(player);
 
+        // El límite de tiempo venció con el servidor vacío y se saltó el cambio: entra el primer
+        // jugador, así que la cuenta empieza de nuevo (mapa completo para él).
+        if (_timelimitSkippedEmpty && !player.IsBot && !player.IsHLTV)
+        {
+            _timelimitSkippedEmpty = false;
+            Logger.LogInformation("[SimpleRTV] First player joined after the timelimit was skipped on an empty server; restarting the timelimit.");
+            ScheduleTimeLimitTimers();
+        }
+
         string steamId = player.SteamID.ToString();
         int slot = player.Slot;
         _db.LoadChatModeAsync(steamId).ContinueWith(t =>
@@ -209,6 +225,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _joinTeamAttempts.Clear();
         _teamsStuckHealTriggered = false;
         _emptySince = null;
+        _timelimitSkippedEmpty = false;
+        _autoVoteTimer = null;
+        _forceChangeTimer = null;
 
         _mapService.SetBlacklist(Config.BlacklistedWorkshopIds, Config.BlacklistedMapNames);
         _mapService.Load(GetMapsFilePath());
@@ -296,10 +315,15 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         float triggerLead = Math.Max(Config.TriggerSecondsBeforeEnd, Config.VoteSeconds + 10);
         float autoVoteDelay = totalSeconds - triggerLead;
 
-        if (autoVoteDelay > 0)
-            AddTimer(autoVoteDelay, StartAutoVote, TimerFlags.STOP_ON_MAPCHANGE);
+        // Al rearmar, los temporizadores anteriores (si siguen vivos) se cancelan.
+        _autoVoteTimer?.Kill();
+        _forceChangeTimer?.Kill();
+        _autoVoteTimer = null;
 
-        AddTimer(totalSeconds, ForceMapChange, TimerFlags.STOP_ON_MAPCHANGE);
+        if (autoVoteDelay > 0)
+            _autoVoteTimer = AddTimer(autoVoteDelay, StartAutoVote, TimerFlags.STOP_ON_MAPCHANGE);
+
+        _forceChangeTimer = AddTimer(totalSeconds, ForceMapChange, TimerFlags.STOP_ON_MAPCHANGE);
 
         Logger.LogInformation("[SimpleRTV] Timelimit: {Min}min. Auto-vote in {Delay}s, forced change in {Total}s.",
             timeLimitMinutes, autoVoteDelay, totalSeconds);
@@ -528,6 +552,16 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private void StartAutoVote()
     {
         if (_mapVote.IsInProgress || _pendingMap != null || _changeScheduled) return;
+
+        // Sin jugadores no hay nadie que vote: la votación acabaría eligiendo un mapa al azar
+        // y ForceMapChange lo aplicaría. Se salta hasta que entre alguien.
+        if (!GetValidPlayers().Any())
+        {
+            _timelimitSkippedEmpty = true;
+            Logger.LogInformation("[SimpleRTV] Auto-vote skipped: no players.");
+            return;
+        }
+
         PrintToAll("rtv.auto_vote_started");
         StartVote(auto: true);
     }
@@ -680,6 +714,26 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         // A change is already on its way (voted winner or round-end apply) — don't compete with it
         if (_changeScheduled) return;
 
+        // Servidor vacío: ni mapa votado ni aleatorio. Se descarta cualquier votación o mapa
+        // pendiente que quedara de antes y no se cambia nada hasta que entre alguien
+        // (OnPlayerActivate rearma el límite). El reset por inactividad ya lo devuelve al
+        // mapa por defecto.
+        if (!GetValidPlayers().Any())
+        {
+            _pendingMap = null;
+            if (_mapVote.IsInProgress)
+            {
+                _mapVote.Reset();
+                _scoreboardTimer?.Kill();
+                _scoreboardTimer = null;
+                _wasdMenu.CloseAll();
+                ClearScoreboardForAll();
+            }
+            _timelimitSkippedEmpty = true;
+            Logger.LogInformation("[SimpleRTV] Timelimit reached with no players, skipping map change until someone joins.");
+            return;
+        }
+
         string? targetMap = _pendingMap;
         _pendingMap = null;
 
@@ -696,14 +750,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (targetMap == null)
         {
-            // Servidor vacío: no rotar a un mapa aleatorio que nadie ha pedido — el reset
-            // por inactividad ya lo devuelve al mapa por defecto.
-            if (!GetValidPlayers().Any())
-            {
-                Logger.LogInformation("[SimpleRTV] Timelimit reached with no players, skipping random map change.");
-                return;
-            }
-
             var random = _mapService.Maps
                 .Where(kv => !IsCurrentMap(kv.Key))
                 .OrderBy(_ => _rng.Next())

@@ -95,6 +95,8 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 | `IdleResetMinutes`        | `15`             | Minutes with 0 human players before switching to `IdleResetMap` (0 = disabled). Needs `sv_hibernate_when_empty 0` |
 | `IdleResetMap`            | `surf_utopia_njv`| Map to switch to when idle (rtv_maps.json key or workshop map name)                              |
 
+While the server has 0 human players, the timelimit does not vote or change the map. It restarts from zero when the first player joins.
+
 ## Commands
 
 | Command     | Access  | Description                              |
