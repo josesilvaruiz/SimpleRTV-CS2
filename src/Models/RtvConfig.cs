@@ -65,4 +65,17 @@ public class RtvConfig : BasePluginConfig
     /// <summary>Map key (must exist in rtv_maps.json / the synced workshop list) to switch to when DefaultFallbackTriggerMap loads.</summary>
     [JsonPropertyName("DefaultFallbackMap")]
     public string DefaultFallbackMap { get; set; } = "surf_utopia_njv";
+
+    /// <summary>
+    /// Minutes the server must stay with 0 human players before switching to IdleResetMap,
+    /// so the next player to join lands on the default map instead of whatever was left
+    /// over. 0 disables it. Requires sv_hibernate_when_empty 0 — a hibernating server
+    /// doesn't run plugin timers, so the check never fires.
+    /// </summary>
+    [JsonPropertyName("IdleResetMinutes")]
+    public int IdleResetMinutes { get; set; } = 15;
+
+    /// <summary>Map name (rtv_maps.json key or workshop map name) to switch to after IdleResetMinutes empty. Empty disables it.</summary>
+    [JsonPropertyName("IdleResetMap")]
+    public string IdleResetMap { get; set; } = "surf_utopia_njv";
 }

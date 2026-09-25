@@ -76,7 +76,9 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
   "MapsFile": "rtv_maps.json",
   "TriggerSecondsBeforeEnd": 120,
   "WorkshopCollectionId": "",
-  "WorkshopCacheHours": 24
+  "WorkshopCacheHours": 24,
+  "IdleResetMinutes": 15,
+  "IdleResetMap": "surf_utopia_njv"
 }
 ```
 
@@ -90,6 +92,8 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 | `TriggerSecondsBeforeEnd` | `120`            | Seconds before timelimit to start the automatic vote                                             |
 | `WorkshopCollectionId`    | `""`             | Workshop Collection ID to auto-populate maps (empty = auto-detect from `host_workshop_collection`) |
 | `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API                                  |
+| `IdleResetMinutes`        | `15`             | Minutes with 0 human players before switching to `IdleResetMap` (0 = disabled). Needs `sv_hibernate_when_empty 0` |
+| `IdleResetMap`            | `surf_utopia_njv`| Map to switch to when idle (rtv_maps.json key or workshop map name)                              |
 
 ## Commands
 

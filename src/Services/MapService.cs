@@ -112,6 +112,19 @@ public class MapService
         return mapKey;
     }
 
+    /// <summary>
+    /// Finds the list key for a map name. Static rtv_maps.json entries are keyed by name,
+    /// but workshop-synced ones are keyed by id with the name only in Display — so a
+    /// config value like "surf_utopia_njv" has to be matched against both.
+    /// </summary>
+    public string? ResolveKey(string mapName)
+    {
+        if (_maps.ContainsKey(mapName)) return mapName;
+        return _maps.FirstOrDefault(kv =>
+            kv.Key.Equals(mapName, StringComparison.OrdinalIgnoreCase) ||
+            kv.Value.Display.Equals(mapName, StringComparison.OrdinalIgnoreCase)).Key;
+    }
+
     /// <summary>Changes the map using the appropriate command (changelevel, host_workshop_map, ds_workshop_changelevel).</summary>
     public void ChangeMap(string mapKey)
     {

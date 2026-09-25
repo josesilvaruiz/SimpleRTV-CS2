@@ -52,6 +52,12 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private readonly Dictionary<int, List<DateTime>> _joinTeamAttempts = new();
     private bool _teamsStuckHealTriggered = false;
 
+    // Reset por inactividad: desde cuándo el servidor está sin jugadores humanos en este mapa.
+    // null = hay alguien (o aún no se ha comprobado). Se mide por reloj y no por número de
+    // comprobaciones para que no dependa del intervalo del timer.
+    private DateTime? _emptySince = null;
+    private const float IdleCheckIntervalSeconds = 30f;
+
     // Mapas ya mostrados como opción de voto recientemente, por categoría — para no repetir
     // los mismos mapas votación tras votación. Se vacía sola cuando el pool restante de esa
     // categoría ya no llega para rellenar los huecos (en vez de quedarse sin mapas que ofrecer).
@@ -109,6 +115,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             _rtvAllowed = true;
             foreach (var p in GetValidPlayers())
                 _wasdMenu.RegisterPlayer(p);
+            StartIdleResetTimer();
         }
     }
 
@@ -201,6 +208,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _mapStartTime = DateTime.Now;
         _joinTeamAttempts.Clear();
         _teamsStuckHealTriggered = false;
+        _emptySince = null;
 
         _mapService.SetBlacklist(Config.BlacklistedWorkshopIds, Config.BlacklistedMapNames);
         _mapService.Load(GetMapsFilePath());
@@ -228,6 +236,51 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
                 _mapService.ChangeMap(Config.DefaultFallbackMap);
             }, TimerFlags.STOP_ON_MAPCHANGE);
         }
+
+        StartIdleResetTimer();
+    }
+
+    // ── Reset por inactividad: servidor vacío → volver al mapa por defecto ─────
+
+    private void StartIdleResetTimer()
+    {
+        if (Config.IdleResetMinutes <= 0 || string.IsNullOrWhiteSpace(Config.IdleResetMap)) return;
+        AddTimer(IdleCheckIntervalSeconds, CheckIdleReset, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    private void CheckIdleReset()
+    {
+        if (GetValidPlayers().Any())
+        {
+            _emptySince = null;
+            return;
+        }
+
+        // Ya estamos en el mapa por defecto, o hay un cambio de mapa en curso: nada que hacer.
+        if (_changeScheduled || Server.MapName.Equals(Config.IdleResetMap, StringComparison.OrdinalIgnoreCase))
+        {
+            _emptySince = null;
+            return;
+        }
+
+        var now = DateTime.Now;
+        _emptySince ??= now;
+        if ((now - _emptySince.Value).TotalMinutes < Config.IdleResetMinutes) return;
+
+        // Reinicia la cuenta pase lo que pase: si el mapa no se encuentra, se reintenta en
+        // otros IdleResetMinutes en vez de cada 30s llenando el log.
+        _emptySince = null;
+
+        string? key = _mapService.ResolveKey(Config.IdleResetMap);
+        if (key == null)
+        {
+            Logger.LogError("[SimpleRTV] Idle reset: map '{Map}' not found in the map list, skipping.", Config.IdleResetMap);
+            return;
+        }
+
+        Logger.LogInformation("[SimpleRTV] Idle reset: no players for {Min} min on '{Current}', switching to '{Target}'.",
+            Config.IdleResetMinutes, Server.MapName, Config.IdleResetMap);
+        _mapService.ChangeMap(key);
     }
 
     private void ScheduleTimeLimitTimers()
@@ -643,6 +696,14 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (targetMap == null)
         {
+            // Servidor vacío: no rotar a un mapa aleatorio que nadie ha pedido — el reset
+            // por inactividad ya lo devuelve al mapa por defecto.
+            if (!GetValidPlayers().Any())
+            {
+                Logger.LogInformation("[SimpleRTV] Timelimit reached with no players, skipping random map change.");
+                return;
+            }
+
             var random = _mapService.Maps
                 .Where(kv => !IsCurrentMap(kv.Key))
                 .OrderBy(_ => _rng.Next())
