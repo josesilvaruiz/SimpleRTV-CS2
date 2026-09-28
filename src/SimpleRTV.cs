@@ -64,6 +64,10 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     // por inactividad no saltaría nunca.
     private bool _hibernateArmed = false;
 
+    // Si nadie ha entrado todavía en este mapa, el límite de tiempo ni se arma — así no cuenta
+    // minutos al aire mientras el mapa está vacío. Lo pone a true ScheduleTimeLimitTimers.
+    private bool _timelimitStarted = false;
+
     // Límite de tiempo con el servidor vacío: no se vota ni se cambia de mapa hasta que entre
     // alguien. Los temporizadores se guardan para poder cancelar los viejos y rearmar uno nuevo
     // (completo) cuando entra el primer jugador, en vez de dejar que dispare a los pocos segundos.
@@ -204,13 +208,23 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         // temporizadores (reset por inactividad, límite de tiempo) vuelvan a funcionar.
         if (!player.IsBot && !player.IsHLTV) SetHibernation(false);
 
-        // El límite de tiempo venció con el servidor vacío y se saltó el cambio: entra el primer
-        // jugador, así que la cuenta empieza de nuevo (mapa completo para él).
-        if (_timelimitSkippedEmpty && !player.IsBot && !player.IsHLTV)
+        if (!player.IsBot && !player.IsHLTV)
         {
-            _timelimitSkippedEmpty = false;
-            Logger.LogInformation("[SimpleRTV] First player joined after the timelimit was skipped on an empty server; restarting the timelimit.");
-            ScheduleTimeLimitTimers();
+            if (!_timelimitStarted)
+            {
+                // Nadie había entrado todavía en este mapa: el límite de tiempo empieza a
+                // contar ahora, mapa completo para el primer jugador.
+                Logger.LogInformation("[SimpleRTV] First player joined; starting the timelimit.");
+                ScheduleTimeLimitTimers();
+            }
+            else if (_timelimitSkippedEmpty)
+            {
+                // El límite ya había arrancado pero venció con el servidor vacío y se saltó
+                // el cambio: entra alguien de nuevo, así que se reinicia entero para él.
+                _timelimitSkippedEmpty = false;
+                Logger.LogInformation("[SimpleRTV] First player joined after the timelimit was skipped on an empty server; restarting the timelimit.");
+                ScheduleTimeLimitTimers();
+            }
         }
 
         string steamId = player.SteamID.ToString();
@@ -240,6 +254,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
         _forceChangeTimer = null;
+        _timelimitStarted = false;
 
         _mapService.SetBlacklist(Config.BlacklistedWorkshopIds, Config.BlacklistedMapNames);
         _mapService.Load(GetMapsFilePath());
@@ -249,8 +264,12 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         else
             _rtvAllowed = true;
 
-        // Delay reads to ensure the map has fully loaded
-        AddTimer(3f, ScheduleTimeLimitTimers, TimerFlags.STOP_ON_MAPCHANGE);
+        // El límite de tiempo no arranca hasta que haya alguien conectado — si el mapa cambia
+        // con el servidor ya vacío, contar desde el cambio de mapa desperdicia minutos y el
+        // mapa nunca llega a jugarse de verdad. Si ya hay jugadores (lo normal: la mayoría no
+        // se va entre votaciones) arranca ahora igual que siempre; si no, OnPlayerActivate lo
+        // hace en cuanto entra el primero.
+        AddTimer(3f, StartTimelimitIfPlayers, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(3f, FetchWorkshopMaps, TimerFlags.STOP_ON_MAPCHANGE);
 
         // Auto-recover from the vanilla CS2 fallback map (e.g. after a crash/restart with no
@@ -345,8 +364,19 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             Server.MapName, Config.IdleHibernateMinutes);
     }
 
+    // Arma el límite de tiempo solo si ya hay alguien conectado — se usa 3s tras OnMapStart, para
+    // el caso normal (jugadores que ya estaban, cambio de mapa votado). Si el mapa arranca vacío,
+    // no hace nada: OnPlayerActivate llama a ScheduleTimeLimitTimers directamente en cuanto
+    // entra el primero.
+    private void StartTimelimitIfPlayers()
+    {
+        if (GetValidPlayers().Any()) ScheduleTimeLimitTimers();
+    }
+
     private void ScheduleTimeLimitTimers()
     {
+        _timelimitStarted = true;
+
         var mpTimelimit = ConVar.Find("mp_timelimit");
         float timeLimitMinutes = mpTimelimit?.GetPrimitiveValue<float>() ?? 0f;
         Logger.LogInformation("[SimpleRTV] mp_timelimit: {Val}", timeLimitMinutes);
