@@ -94,6 +94,7 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 | `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API                                  |
 | `IdleResetMinutes`        | `15`             | Minutes with 0 human players before switching to `IdleResetMap` (0 = disabled). Needs `sv_hibernate_when_empty 0` |
 | `IdleResetMap`            | `surf_utopia_njv`| Map to switch to when idle (rtv_maps.json key or workshop map name)                              |
+| `IdleHibernateMinutes`   | `2`              | Minutes empty on `IdleResetMap` before the plugin turns `sv_hibernate_when_empty` on (suspends the server); turned off again when a player joins. 0 = disabled |
 
 While the server has 0 human players, the timelimit does not vote or change the map. It restarts from zero when the first player joins.
 

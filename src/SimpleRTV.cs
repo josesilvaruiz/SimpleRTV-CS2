@@ -58,6 +58,12 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private DateTime? _emptySince = null;
     private const float IdleCheckIntervalSeconds = 30f;
 
+    // Hibernación: solo se activa (sv_hibernate_when_empty 1) cuando el servidor lleva un rato
+    // vacío ya en el mapa por defecto, y se apaga en cuanto entra alguien. Un servidor
+    // hibernando no ejecuta temporizadores, así que con el cvar a 1 de forma permanente el reset
+    // por inactividad no saltaría nunca.
+    private bool _hibernateArmed = false;
+
     // Límite de tiempo con el servidor vacío: no se vota ni se cambia de mapa hasta que entre
     // alguien. Los temporizadores se guardan para poder cancelar los viejos y rearmar uno nuevo
     // (completo) cuando entra el primer jugador, en vez de dejar que dispare a los pocos segundos.
@@ -128,6 +134,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     public override void Unload(bool hotReload)
     {
+        SetHibernation(false);
         RemoveListener<Listeners.OnMapStart>(OnMapStart);
         RemoveListener<Listeners.OnClientDisconnectPost>(OnClientDisconnect);
         RemoveListener<Listeners.OnTick>(_wasdMenu.OnTick);
@@ -193,6 +200,10 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         _wasdMenu.RegisterPlayer(player);
 
+        // Al despertar de la hibernación entra el primer jugador: se apaga para que los
+        // temporizadores (reset por inactividad, límite de tiempo) vuelvan a funcionar.
+        if (!player.IsBot && !player.IsHLTV) SetHibernation(false);
+
         // El límite de tiempo venció con el servidor vacío y se saltó el cambio: entra el primer
         // jugador, así que la cuenta empieza de nuevo (mapa completo para él).
         if (_timelimitSkippedEmpty && !player.IsBot && !player.IsHLTV)
@@ -225,6 +236,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _joinTeamAttempts.Clear();
         _teamsStuckHealTriggered = false;
         _emptySince = null;
+        SetHibernation(false);
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
         _forceChangeTimer = null;
@@ -272,11 +284,12 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         if (GetValidPlayers().Any())
         {
             _emptySince = null;
+            SetHibernation(false);
             return;
         }
 
-        // Ya estamos en el mapa por defecto, o hay un cambio de mapa en curso: nada que hacer.
-        if (_changeScheduled || Server.MapName.Equals(Config.IdleResetMap, StringComparison.OrdinalIgnoreCase))
+        // Hay un cambio de mapa en curso: nada que hacer.
+        if (_changeScheduled)
         {
             _emptySince = null;
             return;
@@ -284,6 +297,17 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         var now = DateTime.Now;
         _emptySince ??= now;
+
+        // Ya estamos en el mapa por defecto y vacíos: no hay nada que resetear, así que
+        // dejamos que el servidor hiberne pasado un rato (por si alguien reconecta enseguida).
+        if (Server.MapName.Equals(Config.IdleResetMap, StringComparison.OrdinalIgnoreCase))
+        {
+            if (Config.IdleHibernateMinutes > 0 &&
+                (now - _emptySince.Value).TotalMinutes >= Config.IdleHibernateMinutes)
+                SetHibernation(true);
+            return;
+        }
+
         if ((now - _emptySince.Value).TotalMinutes < Config.IdleResetMinutes) return;
 
         // Reinicia la cuenta pase lo que pase: si el mapa no se encuentra, se reintenta en
@@ -300,6 +324,25 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         Logger.LogInformation("[SimpleRTV] Idle reset: no players for {Min} min on '{Current}', switching to '{Target}'.",
             Config.IdleResetMinutes, Server.MapName, Config.IdleResetMap);
         _mapService.ChangeMap(key);
+    }
+
+    private void SetHibernation(bool on)
+    {
+        if (_hibernateArmed == on) return;
+
+        var cvar = ConVar.Find("sv_hibernate_when_empty");
+        if (cvar == null)
+        {
+            Logger.LogWarning("[SimpleRTV] sv_hibernate_when_empty not found, can't change hibernation.");
+            return;
+        }
+
+        cvar.SetValue(on);
+        _hibernateArmed = on;
+        Logger.LogInformation(on
+            ? "[SimpleRTV] Empty on '{Map}' for {Min} min: enabling hibernation."
+            : "[SimpleRTV] Player present: hibernation disabled again.",
+            Server.MapName, Config.IdleHibernateMinutes);
     }
 
     private void ScheduleTimeLimitTimers()

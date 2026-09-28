@@ -78,4 +78,13 @@ public class RtvConfig : BasePluginConfig
     /// <summary>Map name (rtv_maps.json key or workshop map name) to switch to after IdleResetMinutes empty. Empty disables it.</summary>
     [JsonPropertyName("IdleResetMap")]
     public string IdleResetMap { get; set; } = "surf_utopia_njv";
+
+    /// <summary>
+    /// Minutes with 0 human players, already on IdleResetMap, before the plugin turns
+    /// sv_hibernate_when_empty on so the server suspends itself. It is turned off again
+    /// as soon as someone joins, so the idle reset above keeps working (a hibernating
+    /// server doesn't run plugin timers). 0 disables it. Needs IdleResetMinutes/IdleResetMap set.
+    /// </summary>
+    [JsonPropertyName("IdleHibernateMinutes")]
+    public int IdleHibernateMinutes { get; set; } = 2;
 }
