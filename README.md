@@ -94,9 +94,10 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 | `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API                                  |
 | `IdleResetMinutes`        | `15`             | Minutes with 0 human players before switching to `IdleResetMap` (0 = disabled). Needs `sv_hibernate_when_empty 0` |
 | `IdleResetMap`            | `surf_utopia_njv`| Map to switch to when idle (rtv_maps.json key or workshop map name)                              |
-| `IdleHibernateMinutes`   | `2`              | Minutes empty on `IdleResetMap` before the plugin turns `sv_hibernate_when_empty` on (suspends the server); turned off again when a player joins. 0 = disabled |
 
 The timelimit does not start counting on an empty map — it only starts when the first player joins, so it never votes or changes the map while the server has 0 human players.
+
+The plugin never turns `sv_hibernate_when_empty` on by itself (it only ever forces it back to 0). An earlier version did, once the server had been idle on `IdleResetMap` for a couple of minutes — but the first player reconnecting after CS2 actually hibernated made the engine issue a changelevel to an empty map name, leaving the server with no spawngroups and nobody able to join a team. Not something this plugin's config can fix; it's how CS2 itself wakes from hibernation on player connect.
 
 ## Commands
 

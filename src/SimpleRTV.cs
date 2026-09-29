@@ -58,11 +58,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private DateTime? _emptySince = null;
     private const float IdleCheckIntervalSeconds = 30f;
 
-    // Hibernación: solo se activa (sv_hibernate_when_empty 1) cuando el servidor lleva un rato
-    // vacío ya en el mapa por defecto, y se apaga en cuanto entra alguien. Un servidor
-    // hibernando no ejecuta temporizadores, así que con el cvar a 1 de forma permanente el reset
-    // por inactividad no saltaría nunca.
-    private bool _hibernateArmed = false;
+    // Solo por si el cvar viniera ya a 1 de fuera (config vieja, cambio manual) — EnsureNoHibernation
+    // lo apaga la primera vez que se llama. No hay ningún camino en este plugin que lo encienda.
+    private bool _hibernateWasOn = true;
 
     // Si nadie ha entrado todavía en este mapa, el límite de tiempo ni se arma — así no cuenta
     // minutos al aire mientras el mapa está vacío. Lo pone a true ScheduleTimeLimitTimers.
@@ -138,7 +136,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     public override void Unload(bool hotReload)
     {
-        SetHibernation(false);
+        EnsureNoHibernation();
         RemoveListener<Listeners.OnMapStart>(OnMapStart);
         RemoveListener<Listeners.OnClientDisconnectPost>(OnClientDisconnect);
         RemoveListener<Listeners.OnTick>(_wasdMenu.OnTick);
@@ -177,7 +175,31 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
                 "[SimpleRTV] Auto-heal: {Player} no consigue unirse a ningún equipo tras {N} intentos en 20s. Recargando mapa actual ({Map}).",
                 player.PlayerName, attempts.Count, Server.MapName);
             Server.PrintToChatAll($"{Prefix} {ChatColors.Red}Detectado un bug de equipos — recargando el mapa, un momento...");
-            AddTimer(1.5f, () => _mapService.ChangeMap(Server.MapName), TimerFlags.STOP_ON_MAPCHANGE);
+
+            // Server.MapName puede no estar en la lista (o venir vacío, como cuando la
+            // hibernación dejaba el mapa sin cargar del todo) — ChangeMap con una clave que no
+            // existe no hace nada y se queda ahí registrando el error para siempre. Si el mapa
+            // actual no se resuelve, recurrimos al mapa por defecto en vez de no hacer nada.
+            string current = Server.MapName;
+            AddTimer(1.5f, () =>
+            {
+                string? key = _mapService.ResolveKey(current);
+                if (key == null)
+                {
+                    Logger.LogWarning(
+                        "[SimpleRTV] Auto-heal: mapa actual '{Map}' no está en la lista, usando el mapa por defecto '{Fallback}' en su lugar.",
+                        current, Config.IdleResetMap);
+                    key = _mapService.ResolveKey(Config.IdleResetMap);
+                }
+
+                if (key == null)
+                {
+                    Logger.LogError("[SimpleRTV] Auto-heal: ni el mapa actual ni el mapa por defecto están en la lista, no se puede recargar.");
+                    return;
+                }
+
+                _mapService.ChangeMap(key);
+            }, TimerFlags.STOP_ON_MAPCHANGE);
         }
 
         return HookResult.Continue;
@@ -206,7 +228,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         // Al despertar de la hibernación entra el primer jugador: se apaga para que los
         // temporizadores (reset por inactividad, límite de tiempo) vuelvan a funcionar.
-        if (!player.IsBot && !player.IsHLTV) SetHibernation(false);
+        if (!player.IsBot && !player.IsHLTV) EnsureNoHibernation();
 
         if (!player.IsBot && !player.IsHLTV)
         {
@@ -250,7 +272,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _joinTeamAttempts.Clear();
         _teamsStuckHealTriggered = false;
         _emptySince = null;
-        SetHibernation(false);
+        EnsureNoHibernation();
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
         _forceChangeTimer = null;
@@ -303,7 +325,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         if (GetValidPlayers().Any())
         {
             _emptySince = null;
-            SetHibernation(false);
+            EnsureNoHibernation();
             return;
         }
 
@@ -317,15 +339,17 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         var now = DateTime.Now;
         _emptySince ??= now;
 
-        // Ya estamos en el mapa por defecto y vacíos: no hay nada que resetear, así que
-        // dejamos que el servidor hiberne pasado un rato (por si alguien reconecta enseguida).
+        // Ya estamos en el mapa por defecto y vacíos: no hay nada que resetear.
+        //
+        // (Hubo un intento de poner sv_hibernate_when_empty a 1 aquí para ahorrar CPU con el
+        // servidor vacío. Se quitó: al reactivarse con la llegada del primer jugador, el propio
+        // motor de CS2 emitió un changelevel con el nombre de mapa vacío — "CHostStateMgr::
+        // QueueNewRequest( Changelevel (), N )" —, el mapa cargó sin spawngroups y nadie podía
+        // unirse a ningún equipo. No es nada que dependa de esta config; es cómo CS2 despierta
+        // de la hibernación al conectar alguien. EnsureNoHibernation solo queda para garantizar
+        // que el cvar esté a 0, nunca lo pone a 1.)
         if (Server.MapName.Equals(Config.IdleResetMap, StringComparison.OrdinalIgnoreCase))
-        {
-            if (Config.IdleHibernateMinutes > 0 &&
-                (now - _emptySince.Value).TotalMinutes >= Config.IdleHibernateMinutes)
-                SetHibernation(true);
             return;
-        }
 
         if ((now - _emptySince.Value).TotalMinutes < Config.IdleResetMinutes) return;
 
@@ -345,23 +369,15 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _mapService.ChangeMap(key);
     }
 
-    private void SetHibernation(bool on)
+    // Solo garantiza que sv_hibernate_when_empty quede en 0 — nunca lo pone a 1. Ver el
+    // comentario en CheckIdleReset sobre por qué se quitó la hibernación automática.
+    private void EnsureNoHibernation()
     {
-        if (_hibernateArmed == on) return;
-
+        if (!_hibernateWasOn) return;
         var cvar = ConVar.Find("sv_hibernate_when_empty");
-        if (cvar == null)
-        {
-            Logger.LogWarning("[SimpleRTV] sv_hibernate_when_empty not found, can't change hibernation.");
-            return;
-        }
-
-        cvar.SetValue(on);
-        _hibernateArmed = on;
-        Logger.LogInformation(on
-            ? "[SimpleRTV] Empty on '{Map}' for {Min} min: enabling hibernation."
-            : "[SimpleRTV] Player present: hibernation disabled again.",
-            Server.MapName, Config.IdleHibernateMinutes);
+        if (cvar == null) return;
+        cvar.SetValue(false);
+        _hibernateWasOn = false;
     }
 
     // Arma el límite de tiempo solo si ya hay alguien conectado — se usa 3s tras OnMapStart, para
