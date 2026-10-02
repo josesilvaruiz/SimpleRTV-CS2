@@ -72,11 +72,11 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     // los huecos (en vez de quedarse sin mapas que ofrecer).
     private readonly HashSet<string> _recent = new(StringComparer.OrdinalIgnoreCase);
 
-    // El servidor arranca en un mapa de CS2 que no está en el pool (de_dust2): al entrar el
-    // primer jugador se lanza una votación inmediata. Los mapas del Workshop se descargan de
-    // Steam async tras el arranque, así que si aún no están se reintenta cada pocos segundos.
-    private int _bootVoteTries = 0;
-    private const int BootVoteMaxTries = 20;
+    // El servidor arranca en un mapa de CS2 que no está en el pool (de_dust2: lanzar directo en un
+    // mapa del Workshop se queda colgado esperando a Steam). Nada más cargar salta solo a uno
+    // aleatorio del pool; como el Workshop se descarga async, si aún no está se reintenta.
+    private int _bootTries = 0;
+    private const int BootMaxTries = 20;
 
     // Por la misma razón, comparar la clave contra Server.MapName solo funciona para las
     // entradas estáticas de rtv_maps.json — para las de Workshop hay que mirar el Display.
@@ -92,26 +92,26 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         .OrderBy(_ => _rng.Next())
         .FirstOrDefault();
 
-    // Primer jugador en el mapa de arranque (fuera del pool) → votación de mapa inmediata, igual
-    // que cualquier otra. Sin votos gana un mapa al azar (ver OnVoteEnd).
-    private void TryBootVote()
+    private void BootToRandomMap()
     {
-        if (CurrentMapInPool() && _mapService.HasMaps) return;
-        if (_mapVote.IsInProgress || _changeScheduled || !GetValidPlayers().Any()) return;
+        if (CurrentMapInPool() || _changeScheduled) return;
 
-        if (!_mapService.HasMaps)
+        string? key = RandomPoolKey();
+        if (key == null)
         {
-            if (++_bootVoteTries > BootVoteMaxTries)
+            if (++_bootTries > BootMaxTries)
             {
-                Logger.LogError("[SimpleRTV] Boot vote: the workshop map list never loaded.");
+                Logger.LogError("[SimpleRTV] Boot: the workshop map list never loaded.");
                 return;
             }
-            AddTimer(3f, TryBootVote, TimerFlags.STOP_ON_MAPCHANGE);
+            AddTimer(3f, BootToRandomMap, TimerFlags.STOP_ON_MAPCHANGE);
             return;
         }
 
-        Logger.LogInformation("[SimpleRTV] First player on boot map '{Map}': starting the map vote.", Server.MapName);
-        StartVote(auto: false);
+        Logger.LogInformation("[SimpleRTV] Booted on '{Map}' (not in the pool), switching to '{Target}'.",
+            Server.MapName, _mapService.GetDisplayName(key));
+        _changeScheduled = true;
+        _mapService.ChangeMap(key);
     }
 
     private static string Prefix => $" {ChatColors.Green}[RTV]{ChatColors.Default}";
@@ -245,7 +245,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (!player.IsBot && !player.IsHLTV)
         {
-            TryBootVote();
             if (!_timelimitStarted)
             {
                 // Nadie había entrado todavía en este mapa: el límite de tiempo empieza a
@@ -306,6 +305,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         // hace en cuanto entra el primero.
         AddTimer(3f, StartTimelimitIfPlayers, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(3f, FetchWorkshopMaps, TimerFlags.STOP_ON_MAPCHANGE);
+        AddTimer(6f, BootToRandomMap, TimerFlags.STOP_ON_MAPCHANGE);
 
     }
 
