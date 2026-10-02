@@ -152,6 +152,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             _rtvAllowed = true;
             foreach (var p in GetValidPlayers())
                 _wasdMenu.RegisterPlayer(p);
+            // Recarga en caliente (p.ej. tras sincronizar la colección): sin esto el pool del Workshop
+            // no se rellena hasta el siguiente cambio de mapa.
+            AddTimer(3f, FetchWorkshopMaps);
         }
     }
 
