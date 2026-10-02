@@ -18,7 +18,7 @@ namespace SimpleRTV;
 public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 {
     public override string ModuleName => "SimpleRTV";
-    public override string ModuleVersion => "1.2.0";
+    public override string ModuleVersion => "1.3.0";
     public override string ModuleAuthor => "josea";
     public override string ModuleDescription => "Simple RTV for CS2";
 
@@ -52,12 +52,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private readonly Dictionary<int, List<DateTime>> _joinTeamAttempts = new();
     private bool _teamsStuckHealTriggered = false;
 
-    // Reset por inactividad: desde cuándo el servidor está sin jugadores humanos en este mapa.
-    // null = hay alguien (o aún no se ha comprobado). Se mide por reloj y no por número de
-    // comprobaciones para que no dependa del intervalo del timer.
-    private DateTime? _emptySince = null;
-    private const float IdleCheckIntervalSeconds = 30f;
-
     // Solo por si el cvar viniera ya a 1 de fuera (config vieja, cambio manual) — EnsureNoHibernation
     // lo apaga la primera vez que se llama. No hay ningún camino en este plugin que lo encienda.
     private bool _hibernateWasOn = true;
@@ -73,17 +67,16 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private Timer? _forceChangeTimer;
     private bool _timelimitSkippedEmpty = false;
 
-    // Mapas ya mostrados como opción de voto recientemente, por categoría — para no repetir
-    // los mismos mapas votación tras votación. Se vacía sola cuando el pool restante de esa
-    // categoría ya no llega para rellenar los huecos (en vez de quedarse sin mapas que ofrecer).
-    private readonly HashSet<string> _recentMinigame = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _recentSurf = new(StringComparer.OrdinalIgnoreCase);
+    // Mapas ya mostrados como opción de voto recientemente — para no repetir los mismos mapas
+    // votación tras votación. Se vacía sola cuando el pool restante ya no llega para rellenar
+    // los huecos (en vez de quedarse sin mapas que ofrecer).
+    private readonly HashSet<string> _recent = new(StringComparer.OrdinalIgnoreCase);
 
-    // Los mapas que vienen de la sincronización de la colección de Workshop están indexados
-    // por su ID numérico (no por el nombre del mapa) — el nombre real solo está en
-    // MapInfo.Display, así que la categoría hay que mirarla ahí, no en la clave.
-    private static bool IsSurfMap(MapInfo info) =>
-        info.Display.StartsWith("surf_", StringComparison.OrdinalIgnoreCase);
+    // El servidor arranca en un mapa de CS2 que no está en el pool (de_dust2): al entrar el
+    // primer jugador se lanza una votación inmediata. Los mapas del Workshop se descargan de
+    // Steam async tras el arranque, así que si aún no están se reintenta cada pocos segundos.
+    private int _bootVoteTries = 0;
+    private const int BootVoteMaxTries = 20;
 
     // Por la misma razón, comparar la clave contra Server.MapName solo funciona para las
     // entradas estáticas de rtv_maps.json — para las de Workshop hay que mirar el Display.
@@ -91,6 +84,35 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         mapKey.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase) ||
         (_mapService.Maps.TryGetValue(mapKey, out var info) &&
          info.Display.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase));
+
+    private bool CurrentMapInPool() => _mapService.Maps.Keys.Any(IsCurrentMap);
+
+    private string? RandomPoolKey() => _mapService.Maps.Keys
+        .Where(k => !IsCurrentMap(k))
+        .OrderBy(_ => _rng.Next())
+        .FirstOrDefault();
+
+    // Primer jugador en el mapa de arranque (fuera del pool) → votación de mapa inmediata, igual
+    // que cualquier otra. Sin votos gana un mapa al azar (ver OnVoteEnd).
+    private void TryBootVote()
+    {
+        if (CurrentMapInPool() && _mapService.HasMaps) return;
+        if (_mapVote.IsInProgress || _changeScheduled || !GetValidPlayers().Any()) return;
+
+        if (!_mapService.HasMaps)
+        {
+            if (++_bootVoteTries > BootVoteMaxTries)
+            {
+                Logger.LogError("[SimpleRTV] Boot vote: the workshop map list never loaded.");
+                return;
+            }
+            AddTimer(3f, TryBootVote, TimerFlags.STOP_ON_MAPCHANGE);
+            return;
+        }
+
+        Logger.LogInformation("[SimpleRTV] First player on boot map '{Map}': starting the map vote.", Server.MapName);
+        StartVote(auto: false);
+    }
 
     private static string Prefix => $" {ChatColors.Green}[RTV]{ChatColors.Default}";
 
@@ -130,7 +152,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             _rtvAllowed = true;
             foreach (var p in GetValidPlayers())
                 _wasdMenu.RegisterPlayer(p);
-            StartIdleResetTimer();
         }
     }
 
@@ -179,22 +200,14 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             // Server.MapName puede no estar en la lista (o venir vacío, como cuando la
             // hibernación dejaba el mapa sin cargar del todo) — ChangeMap con una clave que no
             // existe no hace nada y se queda ahí registrando el error para siempre. Si el mapa
-            // actual no se resuelve, recurrimos al mapa por defecto en vez de no hacer nada.
+            // actual no se resuelve, recargamos un mapa cualquiera del pool en vez de no hacer nada.
             string current = Server.MapName;
             AddTimer(1.5f, () =>
             {
-                string? key = _mapService.ResolveKey(current);
+                string? key = _mapService.ResolveKey(current) ?? RandomPoolKey();
                 if (key == null)
                 {
-                    Logger.LogWarning(
-                        "[SimpleRTV] Auto-heal: mapa actual '{Map}' no está en la lista, usando el mapa por defecto '{Fallback}' en su lugar.",
-                        current, Config.IdleResetMap);
-                    key = _mapService.ResolveKey(Config.IdleResetMap);
-                }
-
-                if (key == null)
-                {
-                    Logger.LogError("[SimpleRTV] Auto-heal: ni el mapa actual ni el mapa por defecto están en la lista, no se puede recargar.");
+                    Logger.LogError("[SimpleRTV] Auto-heal: no map available to reload.");
                     return;
                 }
 
@@ -232,6 +245,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (!player.IsBot && !player.IsHLTV)
         {
+            TryBootVote();
             if (!_timelimitStarted)
             {
                 // Nadie había entrado todavía en este mapa: el límite de tiempo empieza a
@@ -271,7 +285,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _mapStartTime = DateTime.Now;
         _joinTeamAttempts.Clear();
         _teamsStuckHealTriggered = false;
-        _emptySince = null;
         EnsureNoHibernation();
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
@@ -294,83 +307,10 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         AddTimer(3f, StartTimelimitIfPlayers, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(3f, FetchWorkshopMaps, TimerFlags.STOP_ON_MAPCHANGE);
 
-        // Auto-recover from the vanilla CS2 fallback map (e.g. after a crash/restart with no
-        // valid map configured) — fires immediately instead of waiting for an external cron
-        // watchdog to poll and catch it.
-        if (!string.IsNullOrWhiteSpace(Config.DefaultFallbackTriggerMap) &&
-            !string.IsNullOrWhiteSpace(Config.DefaultFallbackMap) &&
-            Server.MapName.Equals(Config.DefaultFallbackTriggerMap, StringComparison.OrdinalIgnoreCase))
-        {
-            AddTimer(3f, () =>
-            {
-                Logger.LogWarning("[SimpleRTV] Server booted on fallback map '{Trigger}', switching to '{Target}'",
-                    Config.DefaultFallbackTriggerMap, Config.DefaultFallbackMap);
-                _mapService.ChangeMap(Config.DefaultFallbackMap);
-            }, TimerFlags.STOP_ON_MAPCHANGE);
-        }
-
-        StartIdleResetTimer();
-    }
-
-    // ── Reset por inactividad: servidor vacío → volver al mapa por defecto ─────
-
-    private void StartIdleResetTimer()
-    {
-        if (Config.IdleResetMinutes <= 0 || string.IsNullOrWhiteSpace(Config.IdleResetMap)) return;
-        AddTimer(IdleCheckIntervalSeconds, CheckIdleReset, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
-    }
-
-    private void CheckIdleReset()
-    {
-        if (GetValidPlayers().Any())
-        {
-            _emptySince = null;
-            EnsureNoHibernation();
-            return;
-        }
-
-        // Hay un cambio de mapa en curso: nada que hacer.
-        if (_changeScheduled)
-        {
-            _emptySince = null;
-            return;
-        }
-
-        var now = DateTime.Now;
-        _emptySince ??= now;
-
-        // Ya estamos en el mapa por defecto y vacíos: no hay nada que resetear.
-        //
-        // (Hubo un intento de poner sv_hibernate_when_empty a 1 aquí para ahorrar CPU con el
-        // servidor vacío. Se quitó: al reactivarse con la llegada del primer jugador, el propio
-        // motor de CS2 emitió un changelevel con el nombre de mapa vacío — "CHostStateMgr::
-        // QueueNewRequest( Changelevel (), N )" —, el mapa cargó sin spawngroups y nadie podía
-        // unirse a ningún equipo. No es nada que dependa de esta config; es cómo CS2 despierta
-        // de la hibernación al conectar alguien. EnsureNoHibernation solo queda para garantizar
-        // que el cvar esté a 0, nunca lo pone a 1.)
-        if (Server.MapName.Equals(Config.IdleResetMap, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        if ((now - _emptySince.Value).TotalMinutes < Config.IdleResetMinutes) return;
-
-        // Reinicia la cuenta pase lo que pase: si el mapa no se encuentra, se reintenta en
-        // otros IdleResetMinutes en vez de cada 30s llenando el log.
-        _emptySince = null;
-
-        string? key = _mapService.ResolveKey(Config.IdleResetMap);
-        if (key == null)
-        {
-            Logger.LogError("[SimpleRTV] Idle reset: map '{Map}' not found in the map list, skipping.", Config.IdleResetMap);
-            return;
-        }
-
-        Logger.LogInformation("[SimpleRTV] Idle reset: no players for {Min} min on '{Current}', switching to '{Target}'.",
-            Config.IdleResetMinutes, Server.MapName, Config.IdleResetMap);
-        _mapService.ChangeMap(key);
     }
 
     // Solo garantiza que sv_hibernate_when_empty quede en 0 — nunca lo pone a 1. Ver el
-    // comentario en CheckIdleReset sobre por qué se quitó la hibernación automática.
+    // comentario del historial del repo sobre por qué se quitó la hibernación automática.
     private void EnsureNoHibernation()
     {
         if (!_hibernateWasOn) return;
@@ -703,66 +643,33 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _scoreboardTimer = AddTimer(1.0f, UpdateVoteScoreboard, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
     }
 
-    // Compone la votación con cuota fija: Config.MinigameSlotsInVote mapas normales +
-    // Config.SurfSlotsInVote de surf. Dentro de cada categoría, las nominaciones tienen
-    // prioridad y el resto se rellena al azar evitando repetir lo mostrado en votaciones
-    // recientes — hasta que el pool restante de esa categoría no llegue para rellenar los
-    // huecos, momento en el que se reinicia el historial de esa categoría en vez de
-    // ofrecer menos mapas de los pedidos.
+    // Compone la votación: las nominaciones tienen prioridad y el resto de huecos
+    // (Config.MapsInVote) se rellena al azar evitando repetir lo mostrado en votaciones
+    // recientes — hasta que el pool restante no llegue para rellenar los huecos, momento en el
+    // que se reinicia el historial en vez de ofrecer menos mapas de los pedidos.
     private List<KeyValuePair<string, MapInfo>> BuildCandidateList(List<string> nominatedKeys)
     {
-        var result = new List<KeyValuePair<string, MapInfo>>();
-        var usedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = nominatedKeys
+            .Where(k => _mapService.Maps.ContainsKey(k))
+            .Take(Config.MapsInVote)
+            .Select(k => new KeyValuePair<string, MapInfo>(k, _mapService.Maps[k]))
+            .ToList();
 
-        void FillCategory(bool wantSurf, int slots)
+        int remaining = Config.MapsInVote - result.Count;
+        if (remaining > 0)
         {
-            if (slots <= 0) return;
-
-            var nominatedForCategory = nominatedKeys
-                .Where(k => !usedKeys.Contains(k) && _mapService.Maps.TryGetValue(k, out var info)
-                            && IsSurfMap(info) == wantSurf)
-                .Take(slots)
-                .ToList();
-
-            foreach (var key in nominatedForCategory)
-            {
-                result.Add(new(key, _mapService.Maps[key]));
-                usedKeys.Add(key);
-            }
-
-            int remaining = slots - nominatedForCategory.Count;
-            if (remaining <= 0) return;
-
-            var recent = wantSurf ? _recentSurf : _recentMinigame;
-
             var pool = _mapService.Maps
-                .Where(kv => !IsCurrentMap(kv.Key)
-                             && !usedKeys.Contains(kv.Key)
-                             && IsSurfMap(kv.Value) == wantSurf)
+                .Where(kv => !IsCurrentMap(kv.Key) && !result.Any(r => r.Key == kv.Key))
                 .ToList();
+            var freshPool = pool.Where(kv => !_recent.Contains(kv.Key)).ToList();
 
-            var freshPool = pool.Where(kv => !recent.Contains(kv.Key)).ToList();
-
-            // Si sin repetir no llega para rellenar los huecos, se reinicia el historial de
-            // esta categoría (vuelve a estar disponible el pool entero) en vez de ofrecer
-            // menos mapas de los pedidos.
             var sourcePool = freshPool.Count >= remaining ? freshPool : pool;
-            if (sourcePool == pool) recent.Clear();
+            if (sourcePool == pool) _recent.Clear();
 
-            var picked = sourcePool.OrderBy(_ => _rng.Next()).Take(remaining).ToList();
-            foreach (var kv in picked)
-            {
-                result.Add(kv);
-                usedKeys.Add(kv.Key);
-            }
+            result.AddRange(sourcePool.OrderBy(_ => _rng.Next()).Take(remaining));
         }
 
-        FillCategory(wantSurf: false, Config.MinigameSlotsInVote);
-        FillCategory(wantSurf: true, Config.SurfSlotsInVote);
-
-        foreach (var kv in result)
-            (IsSurfMap(kv.Value) ? _recentSurf : _recentMinigame).Add(kv.Key);
-
+        foreach (var kv in result) _recent.Add(kv.Key);
         return result;
     }
 
@@ -775,7 +682,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         {
             ClearScoreboardForAll();
             PrintToAll("rtv.nobody_voted");
-            return;
+            // En el mapa de arranque no se puede quedar el servidor: gana uno al azar.
+            winnerKey = CurrentMapInPool() ? null : RandomPoolKey();
+            if (winnerKey == null) return;
         }
 
         string display = _mapService.GetDisplayName(winnerKey);
