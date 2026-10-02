@@ -44,13 +44,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     private Timer? _scoreboardTimer = null;
     private readonly HashSet<int> _chatModeSlots = new();
 
-    // Bug conocido de CS2 (no específico de nuestros plugins, sin fix publicado — ver
-    // github.com/kus/cs2-modded-server/issues/290): a veces, tras un cambio de mapa, un jugador
-    // no puede unirse a ningún equipo aunque estén libres ("equipo lleno" con 1 solo jugador).
-    // Lo detectamos por patrón: varios intentos de "jointeam" seguidos sin que el equipo
-    // realmente cambie, y recargamos el mapa actual solos en vez de esperar a que alguien avise.
-    private readonly Dictionary<int, List<DateTime>> _joinTeamAttempts = new();
-    private bool _teamsStuckHealTriggered = false;
 
     // Solo por si el cvar viniera ya a 1 de fuera (config vieja, cambio manual) — EnsureNoHibernation
     // lo apaga la primera vez que se llama. No hay ningún camino en este plugin que lo encienda.
@@ -139,10 +132,8 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         RegisterListener<Listeners.OnTick>(_wasdMenu.OnTick);
         RegisterEventHandler<EventPlayerActivate>(OnPlayerActivate);
         RegisterEventHandler<EventRoundEnd>(OnRoundEnd);
-        RegisterEventHandler<EventPlayerTeam>(OnPlayerTeamChanged);
         AddCommandListener("say", OnPlayerSay);
         AddCommandListener("say_team", OnPlayerSay);
-        AddCommandListener("jointeam", OnJoinTeamAttempt);
 
         if (hotReload)
         {
@@ -165,71 +156,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         RemoveListener<Listeners.OnTick>(_wasdMenu.OnTick);
         DeregisterEventHandler<EventPlayerActivate>(OnPlayerActivate);
         DeregisterEventHandler<EventRoundEnd>(OnRoundEnd);
-        DeregisterEventHandler<EventPlayerTeam>(OnPlayerTeamChanged);
         RemoveCommandListener("say", OnPlayerSay, HookMode.Pre);
         RemoveCommandListener("say_team", OnPlayerSay, HookMode.Pre);
-        RemoveCommandListener("jointeam", OnJoinTeamAttempt, HookMode.Pre);
         _wasdMenu.CloseAll();
-    }
-
-    // ── Auto-recuperación: jugador atascado sin poder unirse a ningún equipo ───
-
-    private HookResult OnJoinTeamAttempt(CCSPlayerController? player, CommandInfo info)
-    {
-        if (player == null || !player.IsValid || _teamsStuckHealTriggered)
-            return HookResult.Continue;
-
-        var now = DateTime.Now;
-        if (!_joinTeamAttempts.TryGetValue(player.Slot, out var attempts))
-        {
-            attempts = new List<DateTime>();
-            _joinTeamAttempts[player.Slot] = attempts;
-        }
-
-        attempts.RemoveAll(t => (now - t).TotalSeconds > 20);
-        attempts.Add(now);
-
-        // 3 intentos de unirse a un equipo en 20s sin éxito (OnPlayerTeamChanged habría
-        // limpiado la lista si alguno hubiera funcionado) — patrón claro del bug conocido.
-        if (attempts.Count >= 3)
-        {
-            _teamsStuckHealTriggered = true;
-            Logger.LogWarning(
-                "[SimpleRTV] Auto-heal: {Player} no consigue unirse a ningún equipo tras {N} intentos en 20s. Recargando mapa actual ({Map}).",
-                player.PlayerName, attempts.Count, Server.MapName);
-            Server.PrintToChatAll($"{Prefix} {ChatColors.Red}Detectado un bug de equipos — recargando el mapa, un momento...");
-
-            // Server.MapName puede no estar en la lista (o venir vacío, como cuando la
-            // hibernación dejaba el mapa sin cargar del todo) — ChangeMap con una clave que no
-            // existe no hace nada y se queda ahí registrando el error para siempre. Si el mapa
-            // actual no se resuelve, recargamos un mapa cualquiera del pool en vez de no hacer nada.
-            string current = Server.MapName;
-            AddTimer(1.5f, () =>
-            {
-                string? key = _mapService.ResolveKey(current) ?? RandomPoolKey();
-                if (key == null)
-                {
-                    Logger.LogError("[SimpleRTV] Auto-heal: no map available to reload.");
-                    return;
-                }
-
-                _mapService.ChangeMap(key);
-            }, TimerFlags.STOP_ON_MAPCHANGE);
-        }
-
-        return HookResult.Continue;
-    }
-
-    private HookResult OnPlayerTeamChanged(EventPlayerTeam @event, GameEventInfo info)
-    {
-        // Team > 1 = se unió de verdad a T o CT (0 = None, 1 = Spectator).
-        if (@event.Team > 1)
-        {
-            var player = @event.Userid;
-            if (player != null && player.IsValid)
-                _joinTeamAttempts.Remove(player.Slot);
-        }
-        return HookResult.Continue;
     }
 
     // ── Listeners / Events ────────────────────────────────────────────────────
@@ -284,8 +213,6 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _pendingMap = null;
         _changeScheduled = false;
         _mapStartTime = DateTime.Now;
-        _joinTeamAttempts.Clear();
-        _teamsStuckHealTriggered = false;
         EnsureNoHibernation();
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
