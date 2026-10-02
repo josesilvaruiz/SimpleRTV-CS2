@@ -28,6 +28,9 @@ public class MapService
     public IReadOnlyDictionary<string, MapInfo> Maps => _maps;
     public bool HasMaps => _maps.Count > 0;
 
+    /// <summary>Última clave a la que cambió este plugin: el nombre real del mapa cargado puede diferir del título del Workshop (surf_anime vs surf_anime_fun).</summary>
+    public string? LastRequestedKey { get; private set; }
+
     public void SetBlacklist(IEnumerable<string> workshopIds, IEnumerable<string> mapNames)
     {
         _blacklistIds = new HashSet<string>(workshopIds, StringComparer.OrdinalIgnoreCase);
@@ -133,6 +136,8 @@ public class MapService
             _logger.LogError("[SimpleRTV] Map '{Map}' not found in the list.", mapKey);
             return;
         }
+
+        LastRequestedKey = mapKey;
 
         if (info.WS)
         {

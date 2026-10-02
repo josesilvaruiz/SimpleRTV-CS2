@@ -44,4 +44,8 @@ public class RtvConfig : BasePluginConfig
     /// <summary>Map names (rtv_maps.json keys) to always exclude, for non-workshop entries.</summary>
     [JsonPropertyName("BlacklistedMapNames")]
     public List<string> BlacklistedMapNames { get; set; } = new();
+
+    /// <summary>Mapa de CS2 en el que arranca el servidor; solo en ese mapa se salta solo a uno aleatorio del pool.</summary>
+    [JsonPropertyName("BootMap")]
+    public string BootMap { get; set; } = "de_dust2";
 }

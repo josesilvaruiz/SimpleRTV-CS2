@@ -82,10 +82,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     // entradas estáticas de rtv_maps.json — para las de Workshop hay que mirar el Display.
     private bool IsCurrentMap(string mapKey) =>
         mapKey.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase) ||
+        mapKey.Equals(_mapService.LastRequestedKey, StringComparison.OrdinalIgnoreCase) ||
         (_mapService.Maps.TryGetValue(mapKey, out var info) &&
          info.Display.Equals(Server.MapName, StringComparison.OrdinalIgnoreCase));
-
-    private bool CurrentMapInPool() => _mapService.Maps.Keys.Any(IsCurrentMap);
 
     private string? RandomPoolKey() => _mapService.Maps.Keys
         .Where(k => !IsCurrentMap(k))
@@ -94,7 +93,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     private void BootToRandomMap()
     {
-        if (CurrentMapInPool() || _changeScheduled) return;
+        if (!Server.MapName.Equals(Config.BootMap, StringComparison.OrdinalIgnoreCase) || _changeScheduled) return;
 
         string? key = RandomPoolKey();
         if (key == null)
@@ -686,7 +685,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             ClearScoreboardForAll();
             PrintToAll("rtv.nobody_voted");
             // En el mapa de arranque no se puede quedar el servidor: gana uno al azar.
-            winnerKey = CurrentMapInPool() ? null : RandomPoolKey();
+            winnerKey = Server.MapName.Equals(Config.BootMap, StringComparison.OrdinalIgnoreCase) ? RandomPoolKey() : null;
             if (winnerKey == null) return;
         }
 
