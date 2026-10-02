@@ -1,8 +1,8 @@
-# SimpleRTV for CS2 — Surf fork
+# SimpleRTV for CS2
 
-Fork of [SimpleRTV-CS2](https://github.com/josesilvaruiz/SimpleRTV-CS2) for a surf-only server fed by a single Workshop collection. Differences: one flat map pool (`MapsInVote` slots, no minigame/surf categories); the server boots on a stock map and switches by itself to a random pool map as soon as the Workshop list is loaded; after `IdleResetMinutes` (30) with no players it goes back to `DefaultMap` (`surf_utopia_njv`).
+A Rock The Vote plugin for Counter-Strike 2 built with [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp), for a surf server fed by a single Workshop collection: one flat map pool (`MapsInVote` slots), the server boots on a stock map and switches by itself to a random pool map as soon as the Workshop list is loaded, and after `IdleResetMinutes` (30) with no players it goes back to `DefaultMap` (`surf_utopia_njv`).
 
-A Rock The Vote plugin for Counter-Strike 2 built with [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp).
+The previous minigames version (map categories, fallback map, team auto-heal removed) is kept on the [`minigames`](../../tree/minigames) branch.
 
 ## Features
 
