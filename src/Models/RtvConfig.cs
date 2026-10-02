@@ -48,4 +48,15 @@ public class RtvConfig : BasePluginConfig
     /// <summary>Mapa de CS2 en el que arranca el servidor; solo en ese mapa se salta solo a uno aleatorio del pool.</summary>
     [JsonPropertyName("BootMap")]
     public string BootMap { get; set; } = "de_dust2";
+
+    /// <summary>
+    /// Mapa al que vuelve el servidor cuando lleva <see cref="IdleResetMinutes"/> sin jugadores (clave de
+    /// rtv_maps.json o nombre del mapa del Workshop). Vacío = desactivado.
+    /// </summary>
+    [JsonPropertyName("DefaultMap")]
+    public string DefaultMap { get; set; } = "surf_utopia_njv";
+
+    /// <summary>Minutos con 0 jugadores humanos antes de volver a <see cref="DefaultMap"/>. 0 = desactivado.</summary>
+    [JsonPropertyName("IdleResetMinutes")]
+    public int IdleResetMinutes { get; set; } = 30;
 }

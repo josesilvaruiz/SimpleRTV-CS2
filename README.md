@@ -1,6 +1,6 @@
 # SimpleRTV for CS2 — Surf fork
 
-Fork of [SimpleRTV-CS2](https://github.com/josesilvaruiz/SimpleRTV-CS2) for a surf-only server fed by a single Workshop collection. Differences: no default map and no idle reset; one flat map pool (`MapsInVote` slots, no minigame/surf categories); the server boots on a stock map and switches by itself to a random pool map as soon as the Workshop list is loaded.
+Fork of [SimpleRTV-CS2](https://github.com/josesilvaruiz/SimpleRTV-CS2) for a surf-only server fed by a single Workshop collection. Differences: one flat map pool (`MapsInVote` slots, no minigame/surf categories); the server boots on a stock map and switches by itself to a random pool map as soon as the Workshop list is loaded; after `IdleResetMinutes` (30) with no players it goes back to `DefaultMap` (`surf_utopia_njv`).
 
 A Rock The Vote plugin for Counter-Strike 2 built with [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp).
 
@@ -78,7 +78,9 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
   "MapsFile": "rtv_maps.json",
   "TriggerSecondsBeforeEnd": 120,
   "WorkshopCollectionId": "",
-  "WorkshopCacheHours": 24
+  "WorkshopCacheHours": 24,
+  "DefaultMap": "surf_utopia_njv",
+  "IdleResetMinutes": 30
 }
 ```
 
@@ -92,6 +94,8 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 | `TriggerSecondsBeforeEnd` | `120`            | Seconds before timelimit to start the automatic vote                                             |
 | `WorkshopCollectionId`    | `""`             | Workshop Collection ID to auto-populate maps (empty = auto-detect from `host_workshop_collection`) |
 | `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API                                  |
+| `DefaultMap`              | `surf_utopia_njv`| Map to return to after `IdleResetMinutes` with no players (empty = disabled)                      |
+| `IdleResetMinutes`        | `30`             | Minutes with 0 human players before switching to `DefaultMap` (0 = disabled)                      |
 
 The timelimit does not start counting on an empty map — it only starts when the first player joins, so it never votes or changes the map while the server has 0 human players.
 

@@ -69,6 +69,11 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     // mapa del Workshop se queda colgado esperando a Steam). Nada más cargar salta solo a uno
     // aleatorio del pool; como el Workshop se descarga async, si aún no está se reintenta.
     private int _bootTries = 0;
+
+    // Desde cuándo el servidor está sin jugadores humanos en este mapa (null = hay alguien). Se mide por
+    // reloj, no por número de comprobaciones, para no depender del intervalo del timer.
+    private DateTime? _emptySince = null;
+    private const float IdleCheckIntervalSeconds = 30f;
     private const int BootMaxTries = 20;
 
     // Por la misma razón, comparar la clave contra Server.MapName solo funciona para las
@@ -145,6 +150,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
             // Recarga en caliente (p.ej. tras sincronizar la colección): sin esto el pool del Workshop
             // no se rellena hasta el siguiente cambio de mapa.
             AddTimer(3f, FetchWorkshopMaps);
+            StartIdleResetTimer();
         }
     }
 
@@ -213,6 +219,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _pendingMap = null;
         _changeScheduled = false;
         _mapStartTime = DateTime.Now;
+        _emptySince = null;
         EnsureNoHibernation();
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
@@ -235,7 +242,46 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         AddTimer(3f, StartTimelimitIfPlayers, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(3f, FetchWorkshopMaps, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(6f, BootToRandomMap, TimerFlags.STOP_ON_MAPCHANGE);
+        StartIdleResetTimer();
 
+    }
+
+    // ── Servidor vacío un rato → volver al mapa por defecto ────────────────────
+
+    private void StartIdleResetTimer()
+    {
+        if (Config.IdleResetMinutes <= 0 || string.IsNullOrWhiteSpace(Config.DefaultMap)) return;
+        AddTimer(IdleCheckIntervalSeconds, CheckIdleReset, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    private void CheckIdleReset()
+    {
+        if (GetValidPlayers().Any() || _changeScheduled)
+        {
+            _emptySince = null;
+            return;
+        }
+
+        var now = DateTime.Now;
+        _emptySince ??= now;
+        if ((now - _emptySince.Value).TotalMinutes < Config.IdleResetMinutes) return;
+
+        // Se reinicia la cuenta pase lo que pase: si el mapa no existe se reintenta pasado otro periodo
+        // en vez de cada 30 s llenando el log.
+        _emptySince = null;
+
+        string? key = _mapService.ResolveKey(Config.DefaultMap);
+        if (key == null)
+        {
+            Logger.LogError("[SimpleRTV] Idle reset: default map '{Map}' is not in the map list, skipping.", Config.DefaultMap);
+            return;
+        }
+        if (IsCurrentMap(key)) return; // ya estamos en el mapa por defecto
+
+        Logger.LogInformation("[SimpleRTV] Idle reset: no players for {Min} min on '{Current}', switching to '{Target}'.",
+            Config.IdleResetMinutes, Server.MapName, Config.DefaultMap);
+        _changeScheduled = true;
+        _mapService.ChangeMap(key);
     }
 
     // Solo garantiza que sv_hibernate_when_empty quede en 0 — nunca lo pone a 1. Ver el
