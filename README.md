@@ -80,7 +80,8 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
   "WorkshopCollectionId": "",
   "WorkshopCacheHours": 24,
   "DefaultMap": "surf_utopia_njv",
-  "IdleResetMinutes": 30
+  "IdleResetMinutes": 30,
+  "TimeLimitMinutes": 20
 }
 ```
 
@@ -96,7 +97,10 @@ Located at `addons/counterstrikesharp/configs/plugins/SimpleRTV/SimpleRTV.json`:
 | `WorkshopCacheHours`      | `24`             | Hours before the workshop map cache is refreshed from Steam API                                  |
 | `DefaultMap`              | `surf_utopia_njv`| Map to return to after `IdleResetMinutes` with no players (empty = disabled)                      |
 | `IdleResetMinutes`        | `30`             | Minutes with 0 human players before switching to `DefaultMap` (0 = disabled)                      |
+| `TimeLimitMinutes`        | `20`             | Minutes per map. The plugin handles it itself and sets the engine `mp_timelimit` to 0 (see below)   |
 
 The timelimit does not start counting on an empty map — it only starts when the first player joins, so it never votes or changes the map while the server has 0 human players.
+
+The engine's own `mp_timelimit` is kept at 0 on purpose: if it expires while the server is empty, the first player to join makes CS2 end the map with `changelevel` and an empty map name (`Changelevel ()`), which leaves the server on a map that never loaded. `TimeLimitMinutes` replaces it.
 
 The plugin never turns `sv_hibernate_when_empty` on by itself (it only ever forces it back to 0): waking from hibernation made CS2 issue a changelevel to an empty map name, leaving nobody able to join a team.

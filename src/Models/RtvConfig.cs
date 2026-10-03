@@ -59,4 +59,13 @@ public class RtvConfig : BasePluginConfig
     /// <summary>Minutos con 0 jugadores humanos antes de volver a <see cref="DefaultMap"/>. 0 = desactivado.</summary>
     [JsonPropertyName("IdleResetMinutes")]
     public int IdleResetMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Duración de cada mapa en minutos. El plugin la gestiona él solo (votación + cambio) y deja el
+    /// mp_timelimit del motor a 0: si el motor llega a su propio límite con el servidor vacío, al entrar el
+    /// primer jugador cierra el mapa con un changelevel de nombre vacío ("Changelevel ()") y el servidor se
+    /// queda en un mapa sin cargar. 0 = usar el mp_timelimit del motor (no recomendado).
+    /// </summary>
+    [JsonPropertyName("TimeLimitMinutes")]
+    public int TimeLimitMinutes { get; set; } = 20;
 }

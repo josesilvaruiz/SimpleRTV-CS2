@@ -248,14 +248,33 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     // ── Servidor vacío un rato → volver al mapa por defecto ────────────────────
 
+    // Límite de tiempo que usa el plugin: el configurado, o el mp_timelimit del motor si TimeLimitMinutes es 0.
+    private float EffectiveTimeLimit()
+    {
+        if (Config.TimeLimitMinutes > 0) return Config.TimeLimitMinutes;
+        return ConVar.Find("mp_timelimit")?.GetPrimitiveValue<float>() ?? 0f;
+    }
+
+    // Deja el mp_timelimit del motor a 0 (ver RtvConfig.TimeLimitMinutes). Los cfg de cada mapa lo vuelven a
+    // poner al cargar, así que se reaplica en cada mapa y en cada comprobación periódica.
+    private void EnforceEngineTimelimit()
+    {
+        if (Config.TimeLimitMinutes <= 0) return;
+        var cvar = ConVar.Find("mp_timelimit");
+        if (cvar != null && cvar.GetPrimitiveValue<float>() != 0f) cvar.SetValue(0f);
+    }
+
     private void StartIdleResetTimer()
     {
-        if (Config.IdleResetMinutes <= 0 || string.IsNullOrWhiteSpace(Config.DefaultMap)) return;
+        AddTimer(5f, EnforceEngineTimelimit, TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(IdleCheckIntervalSeconds, CheckIdleReset, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
     }
 
     private void CheckIdleReset()
     {
+        EnforceEngineTimelimit();
+        if (Config.IdleResetMinutes <= 0 || string.IsNullOrWhiteSpace(Config.DefaultMap)) return;
+
         if (GetValidPlayers().Any() || _changeScheduled)
         {
             _emptySince = null;
@@ -308,9 +327,9 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         _timelimitStarted = true;
 
-        var mpTimelimit = ConVar.Find("mp_timelimit");
-        float timeLimitMinutes = mpTimelimit?.GetPrimitiveValue<float>() ?? 0f;
-        Logger.LogInformation("[SimpleRTV] mp_timelimit: {Val}", timeLimitMinutes);
+        EnforceEngineTimelimit();
+        float timeLimitMinutes = EffectiveTimeLimit();
+        Logger.LogInformation("[SimpleRTV] Time limit: {Val} min", timeLimitMinutes);
 
         if (timeLimitMinutes <= 0 || Config.TriggerSecondsBeforeEnd <= 0) return;
 
@@ -401,8 +420,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         if (caller == null || !caller.IsValid) return;
 
-        var mpTimelimit = ConVar.Find("mp_timelimit");
-        float timeLimitMinutes = mpTimelimit?.GetPrimitiveValue<float>() ?? 0f;
+        float timeLimitMinutes = EffectiveTimeLimit();
 
         if (timeLimitMinutes <= 0 || _mapStartTime == DateTime.MinValue)
         {
