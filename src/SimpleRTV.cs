@@ -279,12 +279,17 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     {
         if (!_emptyObserved || Config.TimeLimitMinutes <= 0) return;
         _emptyObserved = false;
-        ConVar.Find("mp_timelimit")?.SetValue((float)Config.TimeLimitMinutes);
-        Logger.LogInformation("[SimpleRTV] First player after the server was empty: restarting the match clock.");
-        Server.ExecuteCommand("mp_restartgame 1");
-        _mapStartTime = DateTime.Now;
-        _timelimitSkippedEmpty = false;
-        ScheduleTimeLimitTimers(); // votación y cambio del plugin, también desde cero
+        // mp_restartgame no hace nada en este modo de juego: se recarga el propio mapa, que pone a cero el reloj
+        // del motor. Tras la recarga OnMapStart limpia _emptyObserved y, con el jugador dentro, no se repite.
+        string? key = _mapService.LastRequestedKey ?? _mapService.ResolveKey(Server.MapName);
+        if (key == null || !_mapService.Maps.ContainsKey(key))
+        {
+            Logger.LogWarning("[SimpleRTV] First player after the server was empty, but the current map '{Map}' is not in the list; not reloading.", Server.MapName);
+            return;
+        }
+        Logger.LogInformation("[SimpleRTV] First player after the server was empty: reloading '{Map}' to restart the clock.", Server.MapName);
+        _changeScheduled = true;
+        AddTimer(2f, () => _mapService.ChangeMap(key), TimerFlags.STOP_ON_MAPCHANGE);
     }
 
     private void StartIdleResetTimer()
