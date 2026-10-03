@@ -73,6 +73,10 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
     // Desde cuándo el servidor está sin jugadores humanos en este mapa (null = hay alguien). Se mide por
     // reloj, no por número de comprobaciones, para no depender del intervalo del timer.
     private DateTime? _emptySince = null;
+
+    // true si en este mapa se ha visto el servidor vacío: el reloj del motor ha seguido corriendo sin nadie,
+    // así que al entrar el primero se reinicia la partida para que cuente el límite entero desde ahí.
+    private bool _emptyObserved = false;
     private const float IdleCheckIntervalSeconds = 30f;
     private const int BootMaxTries = 20;
 
@@ -182,6 +186,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
         if (!player.IsBot && !player.IsHLTV)
         {
+            RestartClockForFirstPlayer();
             if (!_timelimitStarted)
             {
                 // Nadie había entrado todavía en este mapa: el límite de tiempo empieza a
@@ -220,6 +225,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
         _changeScheduled = false;
         _mapStartTime = DateTime.Now;
         _emptySince = null;
+        _emptyObserved = false;
         EnsureNoHibernation();
         _timelimitSkippedEmpty = false;
         _autoVoteTimer = null;
@@ -257,11 +263,28 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     // Deja el mp_timelimit del motor a 0 (ver RtvConfig.TimeLimitMinutes). Los cfg de cada mapa lo vuelven a
     // poner al cargar, así que se reaplica en cada mapa y en cada comprobación periódica.
+    // Con jugadores: el límite configurado (el reloj del HUD lo enseña). Vacío: 0, para que el motor no cierre
+    // el mapa por su cuenta mientras no hay nadie.
     private void EnforceEngineTimelimit()
     {
         if (Config.TimeLimitMinutes <= 0) return;
         var cvar = ConVar.Find("mp_timelimit");
-        if (cvar != null && cvar.GetPrimitiveValue<float>() != 0f) cvar.SetValue(0f);
+        if (cvar == null) return;
+        float want = GetValidPlayers().Any() ? Config.TimeLimitMinutes : 0f;
+        if (cvar.GetPrimitiveValue<float>() != want) cvar.SetValue(want);
+    }
+
+    // Primer jugador tras un rato vacío: reinicia la partida (reloj a cero) y vuelve a poner el límite.
+    private void RestartClockForFirstPlayer()
+    {
+        if (!_emptyObserved || Config.TimeLimitMinutes <= 0) return;
+        _emptyObserved = false;
+        ConVar.Find("mp_timelimit")?.SetValue((float)Config.TimeLimitMinutes);
+        Logger.LogInformation("[SimpleRTV] First player after the server was empty: restarting the match clock.");
+        Server.ExecuteCommand("mp_restartgame 1");
+        _mapStartTime = DateTime.Now;
+        _timelimitSkippedEmpty = false;
+        ScheduleTimeLimitTimers(); // votación y cambio del plugin, también desde cero
     }
 
     private void StartIdleResetTimer()
@@ -272,6 +295,7 @@ public class SimpleRtvPlugin : BasePlugin, IPluginConfig<RtvConfig>
 
     private void CheckIdleReset()
     {
+        if (!GetValidPlayers().Any()) _emptyObserved = true;
         EnforceEngineTimelimit();
         if (Config.IdleResetMinutes <= 0 || string.IsNullOrWhiteSpace(Config.DefaultMap)) return;
 
